@@ -56,15 +56,11 @@ class Keyword:
 Catalog = dict[str, Keyword]
 
 
-def interpreter(folder: Path) -> str:
-    venv = folder / ".venv" / "bin" / "python"
-    return str(venv) if venv.exists() else sys.executable
-
-
 async def load(folder: Path) -> Catalog | None:
     """None when optics-framework is not importable; callers then skip keyword rules."""
+    venv = folder / ".venv" / "bin" / "python"
     process = await asyncio.create_subprocess_exec(
-        interpreter(folder),
+        str(venv) if venv.exists() else sys.executable,
         "-c",
         _PROBE,
         stdout=asyncio.subprocess.PIPE,

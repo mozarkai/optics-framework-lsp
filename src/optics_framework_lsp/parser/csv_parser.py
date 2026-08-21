@@ -35,14 +35,6 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
 
     for uri, content in files:
         rows, blank_rows = _parse_rows(content)
-
-        # Empty line is fine; whitespace-only is not.
-        for cells, row in blank_rows:
-            if any(c != "" for c in cells):
-                ast.csv_issues.append(
-                    CsvIssue(uri=uri, row=row, kind="whitespace-only-line")
-                )
-
         if not rows:
             continue
 
@@ -52,6 +44,17 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
         is_test_case_csv = "test_case" in headers and "test_step" in headers
         is_module_csv = "module_name" in headers and "module_step" in headers
         is_element_csv = "element_name" in headers and "element_id" in headers
+
+        # Unrecognised CSVs (test data, device caps) have schemas we don't know.
+        if not (is_test_case_csv or is_module_csv or is_element_csv):
+            continue
+
+        # Empty line is fine; whitespace-only is not.
+        for cells, row in blank_rows:
+            if any(c != "" for c in cells):
+                ast.csv_issues.append(
+                    CsvIssue(uri=uri, row=row, kind="whitespace-only-line")
+                )
 
         current_test_case: Block | None = None
         current_module: Block | None = None

@@ -5,9 +5,11 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Iterator
+from functools import partial
 
 from lsprotocol.types import Diagnostic, DiagnosticSeverity, Position, Range
 
+from .keyword_catalog import Catalog
 from .parser.ast import AST
 
 SOURCE = "optics"
@@ -116,9 +118,51 @@ def _unknown_elements(ast: AST) -> Iterator[_Finding]:
                         )
 
 
-def validate(ast: AST) -> dict[str, list[Diagnostic]]:
+def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
+    modules = {m.name.lower() for m in ast.modules}
+
+    for module in ast.modules:
+        for step in module.steps:
+            if not step.step_name:
+                continue
+
+            # A step calls a keyword or, for nested modules, another module.
+            name = step.step_name.lower()
+            if name in modules:
+                continue
+
+            keyword = catalog.get(name)
+            if keyword is None:
+                yield _diag(
+                    module.uri,
+                    step.row,
+                    DiagnosticSeverity.Error,
+                    "keyword-not-found",
+                    f"{step.step_name!r} is not a keyword or module",
+                )
+                continue
+
+            # Trailing commas pad rows out, so blank params are not arguments.
+            given = len([p for p in step.params if p])
+            most = None if keyword.variadic else keyword.required + keyword.optional
+            if given < keyword.required or (most is not None and given > most):
+                wanted = f"{keyword.required}+" if most is None else f"{keyword.required}-{most}"
+                yield _diag(
+                    module.uri,
+                    step.row,
+                    DiagnosticSeverity.Error,
+                    "keyword-arity",
+                    f"{step.step_name!r} takes {wanted} params, got {given}",
+                )
+
+
+def validate(ast: AST, catalog: Catalog | None = None) -> dict[str, list[Diagnostic]]:
+    rules = [_hygiene, _duplicates, _unknown_modules, _unknown_elements]
+    if catalog is not None:
+        rules.append(partial(_unknown_steps, catalog=catalog))
+
     found: dict[str, list[Diagnostic]] = defaultdict(list)
-    for rule in (_hygiene, _duplicates, _unknown_modules, _unknown_elements):
+    for rule in rules:
         for uri, diagnostic in rule(ast):
             found[uri].append(diagnostic)
     return dict(found)

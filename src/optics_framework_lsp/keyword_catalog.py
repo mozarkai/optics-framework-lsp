@@ -27,8 +27,9 @@ for module, class_name in CLASSES.items():
     for name, fn in inspect.getmembers(cls, inspect.isfunction):
         if name.startswith("_"):
             continue
-        required = optional = 0
+        required = 0
         variadic = False
+        params = []
         for param_name, p in inspect.signature(fn).parameters.items():
             if param_name == "self":
                 continue
@@ -36,11 +37,12 @@ for module, class_name in CLASSES.items():
                 variadic = True
             elif p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD):
                 # A csv row can only fill positional params, never keyword-only ones.
+                params.append(param_name)
                 if p.default is p.empty:
                     required += 1
-                else:
-                    optional += 1
-        out[name.replace("_", " ").title()] = [required, optional, variadic]
+        out[name.replace("_", " ").title()] = {
+            "required": required, "variadic": variadic, "params": params,
+        }
 
 print(json.dumps(out))
 """
@@ -49,8 +51,10 @@ print(json.dumps(out))
 @dataclass(slots=True)
 class Keyword:
     required: int
-    optional: int
     variadic: bool
+    # Positional names in order. Python forbids a defaulted param before a plain one, so
+    # the first `required` of these are the mandatory ones.
+    params: list[str]
 
 
 Catalog = dict[str, Keyword]
@@ -71,6 +75,6 @@ async def load(folder: Path) -> Catalog | None:
         return None
 
     return {
-        name.lower(): Keyword(*signature)
+        name.lower(): Keyword(**signature)
         for name, signature in json.loads(stdout).items()
     }

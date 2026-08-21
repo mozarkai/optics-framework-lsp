@@ -115,7 +115,7 @@ def _unknown_modules(ast: AST) -> Iterator[_Finding]:
                 )
 
 
-def _declared(ast: AST) -> set[str]:
+def declared(ast: AST) -> set[str]:
     """Names bound at run time rather than defined in an elements csv."""
     names = set()
     for module in ast.modules:
@@ -127,7 +127,7 @@ def _declared(ast: AST) -> set[str]:
 
 
 def _unknown_elements(ast: AST) -> Iterator[_Finding]:
-    known = {e.name for e in ast.elements} | _declared(ast)
+    known = {e.name for e in ast.elements} | declared(ast)
 
     for module in ast.modules:
         for step in module.steps:
@@ -173,7 +173,7 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
 
             # Trailing commas pad rows out, so blank params are not arguments.
             given = len([p for p in step.params if p])
-            most = None if keyword.variadic else keyword.required + keyword.optional
+            most = None if keyword.variadic else len(keyword.params)
             if given < keyword.required or (most is not None and given > most):
                 wanted = f"{keyword.required}+" if most is None else f"{keyword.required}-{most}"
                 yield _diag(

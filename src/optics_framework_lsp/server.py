@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+from sys import addaudithook
 
 from lsprotocol import types
 from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path
 
-from . import keyword_catalog
+from . import completion, keyword_catalog
 from .parser.csv_parser import parse_csv_sources
 from .validation import validate
 
@@ -32,12 +33,22 @@ class OpticsLanguageServer(LanguageServer):
             return []
 
         sources = []
-        for path in sorted(Path(root).rglob("*.csv")):
-            uri = path.as_uri()
-            document = self.workspace.text_documents.get(uri)
-            sources.append(
-                (uri, document.source if document else path.read_text(errors="replace"))
-            )
+        for parent, folders, files in Path(root).walk():
+            # Never descend into .venv or .git: optics-framework ships sample csvs of its
+            # own, and parsing those would invent modules and elements the project lacks.
+            folders[:] = sorted(f for f in folders if not f.startswith("."))
+
+            for name in sorted(f for f in files if f.endswith(".csv")):
+                uri = (parent / name).as_uri()
+                document = self.workspace.text_documents.get(uri)
+                sources.append(
+                    (
+                        uri,
+                        document.source
+                        if document
+                        else (parent / name).read_text(errors="replace"),
+                    )
+                )
         return sources
 
     def validate_folder(self, folder_uri: str) -> None:
@@ -126,3 +137,42 @@ def did_change_watched_files(
 def did_close(ls: OpticsLanguageServer, params: types.DidCloseTextDocumentParams) -> None:
     # The buffer is gone, so fall back to what is on disk.
     _revalidate(ls, params.text_document.uri)
+
+
+@server.feature(
+    types.TEXT_DOCUMENT_COMPLETION,
+    types.CompletionOptions(trigger_characters=[",", "{"]),
+)
+def completions(
+    ls: OpticsLanguageServer, params: types.CompletionParams
+) -> list[types.CompletionItem]:
+    uri = params.text_document.uri
+    folder = ls.folder_of(uri)
+    if folder is None:
+        return []
+
+    return completion.complete(
+        ls.workspace.get_text_document(uri).source,
+        params.position,
+        parse_csv_sources(ls.sources(folder)),
+        ls._catalogs.get(folder),
+    )
+
+
+@server.feature(
+    types.TEXT_DOCUMENT_SIGNATURE_HELP,
+    types.SignatureHelpOptions(trigger_characters=[","], retrigger_characters=[","]),
+)
+def signature_help(
+    ls: OpticsLanguageServer, params: types.SignatureHelpParams
+) -> types.SignatureHelp | None:
+    folder = ls.folder_of(params.text_document.uri)
+    if folder is None:
+        return None
+
+    # Only the catalog is needed here, so the workspace is not re-parsed.
+    return completion.signature(
+        ls.workspace.get_text_document(params.text_document.uri).source,
+        params.position,
+        ls._catalogs.get(folder),
+    )

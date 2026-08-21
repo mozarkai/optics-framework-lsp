@@ -7,7 +7,9 @@ authors = [
     { name = "Bishwa Bhusan Saha", email = "77796630+kun-codes@users.noreply.github.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "pygls>=2.1.1",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]

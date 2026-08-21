@@ -16,6 +16,22 @@ SOURCE = "optics"
 
 _VAR = re.compile(r"\$\{([^}]+)\}")
 
+# Keywords that bind a name instead of reading one, and which params hold the names.
+# Taken from the optics-framework source: most store under the name in their first
+# param, while Run Loop takes variable/iterable pairs after its target module.
+_DECLARES = {
+    "read data": slice(0, 1),
+    "evaluate": slice(0, 1),
+    "date evaluate": slice(0, 1),
+    "run loop": slice(1, None, 2),
+}
+
+
+def _bare(name: str) -> str:
+    """Declarations are written either plainly or as ${name}."""
+    return name.strip().removeprefix("${").removesuffix("}").strip()
+
+
 _CSV_ISSUES = {
     "whitespace-only-line": (
         DiagnosticSeverity.Warning,
@@ -99,22 +115,35 @@ def _unknown_modules(ast: AST) -> Iterator[_Finding]:
                 )
 
 
-def _unknown_elements(ast: AST) -> Iterator[_Finding]:
-    # Runtime vars (Read Data, Evaluate, loop vars) are not tracked yet, so this warns
-    # instead of erroring. Promote once the keyword catalog tells us which keywords
-    # assign names.
-    known = {e.name for e in ast.elements}
+def _declared(ast: AST) -> set[str]:
+    """Names bound at run time rather than defined in an elements csv."""
+    names = set()
     for module in ast.modules:
         for step in module.steps:
-            for text in (step.step_name or "", *step.params):
+            where = _DECLARES.get((step.step_name or "").lower())
+            if where is not None:
+                names.update(_bare(d) for d in step.params[where] if d)
+    return names
+
+
+def _unknown_elements(ast: AST) -> Iterator[_Finding]:
+    known = {e.name for e in ast.elements} | _declared(ast)
+
+    for module in ast.modules:
+        for step in module.steps:
+            # A declaring keyword names its target, it does not reference it.
+            declares = (step.step_name or "").lower() in _DECLARES
+            params = step.params[1:] if declares else step.params
+
+            for text in (step.step_name or "", *params):
                 for name in _VAR.findall(text):
                     if name not in known:
                         yield _diag(
                             module.uri,
                             step.row,
-                            DiagnosticSeverity.Warning,
+                            DiagnosticSeverity.Error,
                             "element-not-found",
-                            f"{name!r} is not a defined element",
+                            f"{name!r} is not a defined element or variable",
                         )
 
 

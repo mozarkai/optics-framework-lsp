@@ -64,6 +64,25 @@ server = OpticsLanguageServer()
 
 @server.feature(types.INITIALIZED)
 async def initialized(ls: OpticsLanguageServer, params: types.InitializedParams) -> None:
+    # Ask the client to watch for edits made outside the editor, such as a git checkout.
+    # File watching has no static capability, so it can only be requested here, and only
+    # from clients that offered to do it.
+    watching = getattr(ls.client_capabilities.workspace, "did_change_watched_files", None)
+    if watching and watching.dynamic_registration:
+        ls.client_register_capability(
+            types.RegistrationParams(
+                registrations=[
+                    types.Registration(
+                        id="optics-csv-watcher",
+                        method=types.WORKSPACE_DID_CHANGE_WATCHED_FILES,
+                        register_options=types.DidChangeWatchedFilesRegistrationOptions(
+                            watchers=[types.FileSystemWatcher(glob_pattern="**/*.csv")]
+                        ),
+                    )
+                ]
+            )
+        )
+
     for folder in ls.workspace.folders:
         # Structural problems first; keyword ones follow once the catalog is read.
         ls.validate_folder(folder)
@@ -93,6 +112,14 @@ def did_change(ls: OpticsLanguageServer, params: types.DidChangeTextDocumentPara
 @server.feature(types.TEXT_DOCUMENT_DID_SAVE)
 def did_save(ls: OpticsLanguageServer, params: types.DidSaveTextDocumentParams) -> None:
     _revalidate(ls, params.text_document.uri)
+
+
+@server.feature(types.WORKSPACE_DID_CHANGE_WATCHED_FILES)
+def did_change_watched_files(
+    ls: OpticsLanguageServer, params: types.DidChangeWatchedFilesParams
+) -> None:
+    for folder in {f for c in params.changes if (f := ls.folder_of(c.uri))}:
+        ls.validate_folder(folder)
 
 
 @server.feature(types.TEXT_DOCUMENT_DID_CLOSE)

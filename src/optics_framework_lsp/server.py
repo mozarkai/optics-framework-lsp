@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
 
 from lsprotocol import types
@@ -16,8 +17,9 @@ from .validation import validate
 class OpticsLanguageServer(LanguageServer):
     def __init__(self) -> None:
         super().__init__("optics-lsp", "0.1.0")
-        # Files we last published to, so cleared problems can be cleared in the editor.
-        self._published: set[str] = set()
+        # Files we last published to per folder, so fixed problems clear in the editor
+        # without one folder wiping another's diagnostics.
+        self._published: defaultdict[str, set[str]] = defaultdict(set)
         self._catalogs: dict[str, keyword_catalog.Catalog | None] = {}
 
     def folder_of(self, uri: str) -> str | None:
@@ -44,7 +46,7 @@ class OpticsLanguageServer(LanguageServer):
             self._catalogs.get(folder_uri),
         )
 
-        for uri in self._published - found.keys():
+        for uri in self._published[folder_uri] - found.keys():
             self.text_document_publish_diagnostics(
                 types.PublishDiagnosticsParams(uri=uri, diagnostics=[])
             )
@@ -54,7 +56,7 @@ class OpticsLanguageServer(LanguageServer):
                 types.PublishDiagnosticsParams(uri=uri, diagnostics=diagnostics)
             )
 
-        self._published = set(found)
+        self._published[folder_uri] = set(found)
 
 
 server = OpticsLanguageServer()

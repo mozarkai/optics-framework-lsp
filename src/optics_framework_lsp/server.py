@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-from sys import addaudithook
 
 import yaml
 from lsprotocol import types
@@ -208,9 +207,9 @@ def completions(
         params.position,
         ast,
         ls._catalogs.get(folder),
-        images(files),
-        data_files(to_fs_path(folder), files, ast),
-        apis(files),
+        images=images(files),
+        data_files=data_files(to_fs_path(folder), files, ast),
+        apis=apis(files),
     )
 
 

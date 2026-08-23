@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from collections.abc import Sequence
+from typing import Literal
 
 from lsprotocol.types import (
     CompletionItem,
@@ -22,9 +23,11 @@ from .parser.ast import AST
 from .validation import declared, undefined
 
 
+ParamKind = Literal["module", "file", "api"]
+
 # What a param holds, by keyword and position after `module_step`. Anything unlisted
 # holds an element or variable.
-_PARAM_KINDS = {
+_PARAM_KINDS: dict[str, dict[int, ParamKind]] = {
     "run loop": {0: "module"},
     "execute module": {0: "module"},
     "read data": {1: "file"},
@@ -102,8 +105,9 @@ def complete(
     position: Position,
     ast: AST,
     catalog: Catalog | None,
+    *,
     images: Sequence[str] = (),
-    data: Sequence[str] = (),
+    data_files: Sequence[str] = (),
     apis: Sequence[str] = (),
 ) -> list[CompletionItem]:
     cursor = Cursor(text, position)
@@ -141,7 +145,7 @@ def complete(
             return _modules(cursor, ast)
         if kind == "file":
             # Resolved against the project root, so a relative path is what belongs here.
-            return _paths(cursor, data, "data file")
+            return _paths(cursor, data_files, "data file")
         if kind == "api":
             return [
                 _item(cursor, name, CompletionItemKind.Value, "api", name) for name in apis

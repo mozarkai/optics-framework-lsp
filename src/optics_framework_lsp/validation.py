@@ -126,9 +126,8 @@ def declared(ast: AST) -> set[str]:
     return names
 
 
-def _unknown_elements(ast: AST) -> Iterator[_Finding]:
-    known = {e.name for e in ast.elements} | declared(ast)
-
+def _references(ast: AST) -> Iterator[tuple[str, int, str]]:
+    """Every ${name} a module step reads, as uri, row, name."""
     for module in ast.modules:
         for step in module.steps:
             # A declaring keyword names its target, it does not reference it.
@@ -137,14 +136,27 @@ def _unknown_elements(ast: AST) -> Iterator[_Finding]:
 
             for text in (step.step_name or "", *params):
                 for name in _VAR.findall(text):
-                    if name not in known:
-                        yield _diag(
-                            module.uri,
-                            step.row,
-                            DiagnosticSeverity.Error,
-                            "element-not-found",
-                            f"{name!r} is not a defined element or variable",
-                        )
+                    yield module.uri, step.row, name
+
+
+def undefined(ast: AST) -> set[str]:
+    """Names read but never defined: what element-not-found reports."""
+    known = {e.name for e in ast.elements} | declared(ast)
+    return {name for _, _, name in _references(ast) if name not in known}
+
+
+def _unknown_elements(ast: AST) -> Iterator[_Finding]:
+    known = {e.name for e in ast.elements} | declared(ast)
+
+    for uri, row, name in _references(ast):
+        if name not in known:
+            yield _diag(
+                uri,
+                row,
+                DiagnosticSeverity.Error,
+                "element-not-found",
+                f"{name!r} is not a defined element or variable",
+            )
 
 
 def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:

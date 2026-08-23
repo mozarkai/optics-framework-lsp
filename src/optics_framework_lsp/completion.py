@@ -18,7 +18,7 @@ from lsprotocol.types import (
 
 from .keyword_catalog import Catalog
 from .parser.ast import AST
-from .validation import declared
+from .validation import declared, undefined
 
 
 class Cursor:
@@ -103,6 +103,13 @@ def complete(
     # Both name columns continue an existing block, so they offer what already exists.
     if cursor.column in (cursor.column_of("test_step"), cursor.column_of("module_name")):
         return _modules(cursor, ast)
+
+    # Defining an element is how an element-not-found gets fixed, so offer those names.
+    if cursor.column == cursor.column_of("element_name"):
+        return [
+            _item(cursor, name, CompletionItemKind.Variable, "used, not defined", name)
+            for name in sorted(undefined(ast))
+        ]
 
     if cursor.column == cursor.column_of("test_case"):
         return [

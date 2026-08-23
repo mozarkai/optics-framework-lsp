@@ -101,18 +101,46 @@ def _duplicates(ast: AST) -> Iterator[_Finding]:
             yield _diag(uri, row, severity, code, f"Duplicate {kind} {name!r}")
 
 
-def _unknown_modules(ast: AST) -> Iterator[_Finding]:
-    known = {b.name for b in ast.modules}
+def _module_args(step_name: str | None, count: int) -> set[int]:
+    """Which params of a step name a module to run, given how many it was given."""
+    name = (step_name or "").lower()
+    if name in ("run loop", "execute module"):
+        return {0}
+    if name == "condition":
+        # Condition, target pairs, with a bare else-target last when the count is odd.
+        return set(range(1, count, 2)) | ({count - 1} if count % 2 else set())
+    return set()
+
+
+def _module_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
+    """Every place a module is named: a test case step, or a param that runs one."""
     for test_case in ast.test_cases:
         for step in test_case.steps:
-            if step.step_name and step.step_name not in known:
-                yield _diag(
-                    test_case.uri,
-                    step.row,
-                    DiagnosticSeverity.Error,
-                    "module-not-found",
-                    f"Module {step.step_name!r} not found",
-                )
+            if step.step_name:
+                yield test_case.uri, step.row, step.step_name
+
+    for module in ast.modules:
+        for step in module.steps:
+            # Blank cells are dropped by `read_modules`, so they do not hold a place.
+            params = [p for p in step.params if p]
+            for i in _module_args(step.step_name, len(params)):
+                yield module.uri, step.row, params[i]
+
+
+def _unknown_modules(ast: AST) -> Iterator[_Finding]:
+    # A ${name} is reported like any other: nothing substitutes it first. The runner
+    # hands params to the keyword untouched, and `execute_module` indexes the dict raw.
+    known = {b.name for b in ast.modules}
+
+    for uri, row, name in _module_refs(ast):
+        if name not in known:
+            yield _diag(
+                uri,
+                row,
+                DiagnosticSeverity.Error,
+                "module-not-found",
+                f"Module {name!r} not found",
+            )
 
 
 def declared(ast: AST) -> set[str]:

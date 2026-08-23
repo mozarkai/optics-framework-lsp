@@ -22,8 +22,13 @@ from .parser.ast import AST
 from .validation import declared, undefined
 
 
-# Param positions, counted after `module_step`, that hold a module name.
-_MODULE_PARAMS = {"run loop": {0}, "execute module": {0}}
+# What a param holds, by keyword and position after `module_step`. Anything unlisted
+# holds an element or variable.
+_PARAM_KINDS = {
+    "run loop": {0: "module"},
+    "execute module": {0: "module"},
+    "read data": {1: "file"},
+}
 
 
 class Cursor:
@@ -79,6 +84,10 @@ def _modules(cursor: Cursor, ast: AST, prefix: str = "") -> list[CompletionItem]
     ]
 
 
+def _paths(cursor: Cursor, names: Sequence[str], detail: str) -> list[CompletionItem]:
+    return [_item(cursor, name, CompletionItemKind.File, detail, name) for name in names]
+
+
 def _variables(cursor: Cursor, ast: AST) -> list[CompletionItem]:
     names = {e.name for e in ast.elements} | declared(ast)
     return [
@@ -93,6 +102,7 @@ def complete(
     ast: AST,
     catalog: Catalog | None,
     images: Sequence[str] = (),
+    data: Sequence[str] = (),
 ) -> list[CompletionItem]:
     cursor = Cursor(text, position)
     step = cursor.column_of("module_step")
@@ -123,10 +133,13 @@ def complete(
             modules = _modules(cursor, ast, "!" if cursor.partial.startswith("!") else "")
             return modules if param % 2 else modules + _variables(cursor, ast)
 
-        # `Execute Module`, and `Run Loop` via its target, name a module to run rather
-        # than an element to find, and they are written bare.
-        if param in _MODULE_PARAMS.get(name, ()):
+        kind = _PARAM_KINDS.get(name, {}).get(param)
+        if kind == "module":
+            # A module to run, not an element to find, and written bare.
             return _modules(cursor, ast)
+        if kind == "file":
+            # Resolved against the project root, so a relative path is what belongs here.
+            return _paths(cursor, data, "data file")
 
         return _variables(cursor, ast)
 
@@ -144,10 +157,7 @@ def complete(
     # An id is usually an xpath or literal text, which we cannot guess, but an image
     # locator is the bare filename of a template somewhere in the project.
     if cursor.column == cursor.column_of("element_id"):
-        return [
-            _item(cursor, name, CompletionItemKind.File, "template image", name)
-            for name in images
-        ]
+        return _paths(cursor, images, "template image")
 
     if cursor.column == cursor.column_of("test_case"):
         return [

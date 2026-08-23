@@ -11,17 +11,30 @@ from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path
 
 from . import completion, keyword_catalog
+from .parser.ast import AST
 from .parser.csv_parser import parse_csv_sources
 from .validation import validate
 
 
 # Only these classify as Image in `determine_element_type` (.tiff discovers but never matches).
 _IMAGES = {".png", ".jpg", ".jpeg", ".bmp"}
+# What `_load_file_data` can parse.
+_DATA = {".csv", ".json"}
 
 
 def images(files: list[Path]) -> list[str]:
     """Templates are matched by bare filename, wherever they sit in the project."""
     return sorted({p.name for p in files if p.suffix.lower() in _IMAGES})
+
+
+def data_files(root: str | None, files: list[Path], ast: AST) -> list[str]:
+    """What `Read Data` can read: a project-relative csv or json that is not ours."""
+    ours = {b.uri for b in [*ast.test_cases, *ast.modules]} | {e.uri for e in ast.elements}
+    return sorted(
+        str(path.relative_to(root))
+        for path in files
+        if root and path.suffix.lower() in _DATA and path.as_uri() not in ours
+    )
 
 
 class OpticsLanguageServer(LanguageServer):
@@ -163,12 +176,14 @@ def completions(
         return []
 
     files = ls.files(folder)
+    ast = parse_csv_sources(ls.sources(files))
     return completion.complete(
         ls.workspace.get_text_document(uri).source,
         params.position,
-        parse_csv_sources(ls.sources(files)),
+        ast,
         ls._catalogs.get(folder),
         images(files),
+        data_files(to_fs_path(folder), files, ast),
     )
 
 

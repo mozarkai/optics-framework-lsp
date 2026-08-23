@@ -72,10 +72,18 @@ def _item(cursor: Cursor, label: str, kind: CompletionItemKind, detail: str, tex
     )
 
 
-def _modules(cursor: Cursor, ast: AST) -> list[CompletionItem]:
+def _modules(cursor: Cursor, ast: AST, prefix: str = "") -> list[CompletionItem]:
     return [
-        _item(cursor, name, CompletionItemKind.Module, "module", name)
+        _item(cursor, name, CompletionItemKind.Module, "module", prefix + name)
         for name in sorted({m.name for m in ast.modules})
+    ]
+
+
+def _variables(cursor: Cursor, ast: AST) -> list[CompletionItem]:
+    names = {e.name for e in ast.elements} | declared(ast)
+    return [
+        _item(cursor, name, CompletionItemKind.Variable, "element", f"${{{name}}}")
+        for name in sorted(names)
     ]
 
 
@@ -106,16 +114,21 @@ def complete(
         return items
 
     if step is not None and cursor.column > step:
+        name = cursor.step_name(step)
+        param = cursor.column - step - 1
+
+        # `Condition` alternates condition, target. A target is always a module, while a
+        # condition is either a module, optionally !-inverted, or an expression.
+        if name == "condition":
+            modules = _modules(cursor, ast, "!" if cursor.partial.startswith("!") else "")
+            return modules if param % 2 else modules + _variables(cursor, ast)
+
         # `Execute Module`, and `Run Loop` via its target, name a module to run rather
         # than an element to find, and they are written bare.
-        if (cursor.column - step - 1) in _MODULE_PARAMS.get(cursor.step_name(step), ()):
+        if param in _MODULE_PARAMS.get(name, ()):
             return _modules(cursor, ast)
 
-        names = {e.name for e in ast.elements} | declared(ast)
-        return [
-            _item(cursor, name, CompletionItemKind.Variable, "element", f"${{{name}}}")
-            for name in sorted(names)
-        ]
+        return _variables(cursor, ast)
 
     # Both name columns continue an existing block, so they offer what already exists.
     if cursor.column in (cursor.column_of("test_step"), cursor.column_of("module_name")):

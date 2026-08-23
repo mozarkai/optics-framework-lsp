@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Sequence
 
 from lsprotocol.types import (
     CompletionItem,
@@ -72,7 +73,11 @@ def _modules(cursor: Cursor, ast: AST) -> list[CompletionItem]:
 
 
 def complete(
-    text: str, position: Position, ast: AST, catalog: Catalog | None
+    text: str,
+    position: Position,
+    ast: AST,
+    catalog: Catalog | None,
+    images: Sequence[str] = (),
 ) -> list[CompletionItem]:
     cursor = Cursor(text, position)
     step = cursor.column_of("module_step")
@@ -109,6 +114,14 @@ def complete(
         return [
             _item(cursor, name, CompletionItemKind.Variable, "used, not defined", name)
             for name in sorted(undefined(ast))
+        ]
+
+    # An id is usually an xpath or literal text, which we cannot guess, but an image
+    # locator is the bare filename of a template somewhere in the project.
+    if cursor.column == cursor.column_of("element_id"):
+        return [
+            _item(cursor, name, CompletionItemKind.File, "template image", name)
+            for name in images
         ]
 
     if cursor.column == cursor.column_of("test_case"):

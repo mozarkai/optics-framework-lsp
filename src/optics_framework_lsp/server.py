@@ -15,6 +15,15 @@ from .parser.csv_parser import parse_csv_sources
 from .validation import validate
 
 
+# Only these classify as Image in `determine_element_type` (.tiff discovers but never matches).
+_IMAGES = {".png", ".jpg", ".jpeg", ".bmp"}
+
+
+def images(files: list[Path]) -> list[str]:
+    """Templates are matched by bare filename, wherever they sit in the project."""
+    return sorted({p.name for p in files if p.suffix.lower() in _IMAGES})
+
+
 class OpticsLanguageServer(LanguageServer):
     def __init__(self) -> None:
         super().__init__("optics-lsp", "0.1.0")
@@ -26,34 +35,36 @@ class OpticsLanguageServer(LanguageServer):
     def folder_of(self, uri: str) -> str | None:
         return next((f for f in self.workspace.folders if uri.startswith(f)), None)
 
-    def sources(self, folder_uri: str) -> list[tuple[str, str]]:
-        """Every csv in the folder, with open buffers overriding what is on disk."""
+    def files(self, folder_uri: str) -> list[Path]:
         root = to_fs_path(folder_uri)
         if root is None:
             return []
 
-        sources = []
+        found = []
         for parent, folders, files in Path(root).walk():
-            # Never descend into .venv or .git: optics-framework ships sample csvs of its
-            # own, and parsing those would invent modules and elements the project lacks.
+            # Never descend into .venv or .git: optics-framework ships sample csvs and
+            # images of its own, which would invent names the project does not have.
             folders[:] = sorted(f for f in folders if not f.startswith("."))
+            found.extend(parent / name for name in sorted(files))
+        return found
 
-            for name in sorted(f for f in files if f.endswith(".csv")):
-                uri = (parent / name).as_uri()
-                document = self.workspace.text_documents.get(uri)
-                sources.append(
-                    (
-                        uri,
-                        document.source
-                        if document
-                        else (parent / name).read_text(errors="replace"),
-                    )
-                )
+    def sources(self, files: list[Path]) -> list[tuple[str, str]]:
+        """Every csv among `files`, with open buffers overriding what is on disk."""
+        sources = []
+        for path in files:
+            if path.suffix != ".csv":
+                continue
+
+            uri = path.as_uri()
+            document = self.workspace.text_documents.get(uri)
+            sources.append(
+                (uri, document.source if document else path.read_text(errors="replace"))
+            )
         return sources
 
     def validate_folder(self, folder_uri: str) -> None:
         found = validate(
-            parse_csv_sources(self.sources(folder_uri)),
+            parse_csv_sources(self.sources(self.files(folder_uri))),
             self._catalogs.get(folder_uri),
         )
 
@@ -151,11 +162,13 @@ def completions(
     if folder is None:
         return []
 
+    files = ls.files(folder)
     return completion.complete(
         ls.workspace.get_text_document(uri).source,
         params.position,
-        parse_csv_sources(ls.sources(folder)),
+        parse_csv_sources(ls.sources(files)),
         ls._catalogs.get(folder),
+        images(files),
     )
 
 

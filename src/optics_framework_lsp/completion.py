@@ -64,6 +64,13 @@ def _item(cursor: Cursor, label: str, kind: CompletionItemKind, detail: str, tex
     )
 
 
+def _modules(cursor: Cursor, ast: AST) -> list[CompletionItem]:
+    return [
+        _item(cursor, name, CompletionItemKind.Module, "module", name)
+        for name in sorted({m.name for m in ast.modules})
+    ]
+
+
 def complete(
     text: str, position: Position, ast: AST, catalog: Catalog | None
 ) -> list[CompletionItem]:
@@ -72,10 +79,7 @@ def complete(
 
     if step is not None and cursor.column == step:
         # A step names a keyword or, for nested modules, another module.
-        items = [
-            _item(cursor, name, CompletionItemKind.Module, "module", name)
-            for name in sorted({m.name for m in ast.modules})
-        ]
+        items = _modules(cursor, ast)
         for name, keyword in sorted((catalog or {}).items()):
             label = name.title()
             items.append(
@@ -96,11 +100,9 @@ def complete(
             for name in sorted(names)
         ]
 
-    if cursor.column == cursor.column_of("test_step"):
-        return [
-            _item(cursor, name, CompletionItemKind.Module, "module", name)
-            for name in sorted({m.name for m in ast.modules})
-        ]
+    # Both name columns continue an existing block, so they offer what already exists.
+    if cursor.column in (cursor.column_of("test_step"), cursor.column_of("module_name")):
+        return _modules(cursor, ast)
 
     if cursor.column == cursor.column_of("test_case"):
         return [

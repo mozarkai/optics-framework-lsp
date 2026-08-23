@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Literal
 
 from lsprotocol.types import (
@@ -97,8 +97,11 @@ def _modules(cursor: Cursor, ast: AST, prefix: str = "") -> list[CompletionItem]
     ]
 
 
-def _paths(cursor: Cursor, names: Sequence[str], detail: str) -> list[CompletionItem]:
-    return [_item(cursor, name, CompletionItemKind.File, detail, name) for name in names]
+def _listing(
+    cursor: Cursor, names: Iterable[str], kind: CompletionItemKind, detail: str
+) -> list[CompletionItem]:
+    """Names offered as they are written."""
+    return [_item(cursor, name, kind, detail, name) for name in names]
 
 
 def _variables(cursor: Cursor, ast: AST) -> list[CompletionItem]:
@@ -154,22 +157,16 @@ def complete(
             return _modules(cursor, ast)
         if kind == "file":
             # Resolved against the project root, so a relative path is what belongs here.
-            return _paths(cursor, data_files, "data file")
+            return _listing(cursor, data_files, CompletionItemKind.File, "data file")
         if kind == "api":
-            return [
-                _item(cursor, name, CompletionItemKind.Value, "api", name) for name in apis
-            ]
+            return _listing(cursor, apis, CompletionItemKind.Value, "api")
 
         # The catalog names the params, so a fixed-value one is found by name rather
         # than by listing every keyword that happens to take a `direction`.
         keyword = (catalog or {}).get(name)
-        if keyword is not None and param < len(keyword.params):
-            values = _PARAM_VALUES.get(keyword.params[param])
-            if values:
-                return [
-                    _item(cursor, value, CompletionItemKind.EnumMember, "value", value)
-                    for value in values
-                ]
+        names = keyword.params if keyword else []
+        if values := _PARAM_VALUES.get(names[param] if param < len(names) else ""):
+            return _listing(cursor, values, CompletionItemKind.EnumMember, "value")
 
         return _variables(cursor, ast)
 
@@ -179,21 +176,17 @@ def complete(
 
     # Defining an element is how an element-not-found gets fixed, so offer those names.
     if cursor.column == cursor.column_of("element_name"):
-        return [
-            _item(cursor, name, CompletionItemKind.Variable, "used, not defined", name)
-            for name in sorted(undefined(ast))
-        ]
+        kind = CompletionItemKind.Variable
+        return _listing(cursor, sorted(undefined(ast)), kind, "used, not defined")
 
     # An id is usually an xpath or literal text, which we cannot guess, but an image
     # locator is the bare filename of a template somewhere in the project.
     if cursor.column == cursor.column_of("element_id"):
-        return _paths(cursor, images, "template image")
+        return _listing(cursor, images, CompletionItemKind.File, "template image")
 
     if cursor.column == cursor.column_of("test_case"):
-        return [
-            _item(cursor, name, CompletionItemKind.Value, "test case", name)
-            for name in sorted({t.name for t in ast.test_cases})
-        ]
+        names = sorted({t.name for t in ast.test_cases})
+        return _listing(cursor, names, CompletionItemKind.Value, "test case")
 
     return []
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterator
 from functools import partial
 
@@ -78,27 +78,32 @@ def _hygiene(ast: AST) -> Iterator[_Finding]:
 def _duplicates(ast: AST) -> Iterator[_Finding]:
     # Same name in two files is how platform variants (ard/ios) coexist, so only a
     # single file redefining a name is a problem.
-    seen: dict[tuple[str, str, str], list[int]] = defaultdict(list)
-    for kind, name, uri, row in (
-        [("test case", b.name, b.uri, b.start_row) for b in ast.test_cases]
-        + [("module", b.name, b.uri, b.start_row) for b in ast.modules]
-        + [("element", e.name, e.uri, e.row) for e in ast.elements]
+    seen: dict[tuple[str, str, str], list[tuple[int, str | None]]] = defaultdict(list)
+    for kind, name, uri, row, value in (
+        [("test case", b.name, b.uri, b.start_row, None) for b in ast.test_cases]
+        + [("module", b.name, b.uri, b.start_row, None) for b in ast.modules]
+        + [("element", e.name, e.uri, e.row, e.value) for e in ast.elements]
     ):
-        seen[(kind, name, uri)].append(row)
+        seen[(kind, name, uri)].append((row, value))
 
-    for (kind, name, uri), rows in seen.items():
+    for (kind, name, uri), entries in seen.items():
+        if kind == "element":
+            # Repeating a name with different ids is how fallback locators are written:
+            # `read_elements` gathers them into one list. Repeating the same id is only
+            # untidy: it runs the same, but a failed lookup retries that id twice.
+            repeated = Counter(value for _, value in entries)
+            rows = [row for row, value in entries if repeated[value] > 1]
+        else:
+            rows = [row for row, _ in entries]
+
         if len(rows) < 2:
             continue
 
-        severity = (
-            DiagnosticSeverity.Error
-            if kind == "element"
-            else DiagnosticSeverity.Warning
-        )
         code = f"duplicate-{kind.replace(' ', '-')}"
-
         for row in rows:
-            yield _diag(uri, row, severity, code, f"Duplicate {kind} {name!r}")
+            yield _diag(
+                uri, row, DiagnosticSeverity.Warning, code, f"Duplicate {kind} {name!r}"
+            )
 
 
 def _module_args(step_name: str | None, count: int) -> set[int]:

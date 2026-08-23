@@ -28,6 +28,7 @@ _PARAM_KINDS = {
     "run loop": {0: "module"},
     "execute module": {0: "module"},
     "read data": {1: "file"},
+    "invoke api": {0: "api"},
 }
 
 
@@ -103,6 +104,7 @@ def complete(
     catalog: Catalog | None,
     images: Sequence[str] = (),
     data: Sequence[str] = (),
+    apis: Sequence[str] = (),
 ) -> list[CompletionItem]:
     cursor = Cursor(text, position)
     step = cursor.column_of("module_step")
@@ -140,6 +142,10 @@ def complete(
         if kind == "file":
             # Resolved against the project root, so a relative path is what belongs here.
             return _paths(cursor, data, "data file")
+        if kind == "api":
+            return [
+                _item(cursor, name, CompletionItemKind.Value, "api", name) for name in apis
+            ]
 
         return _variables(cursor, ast)
 

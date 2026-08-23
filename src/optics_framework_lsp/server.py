@@ -6,6 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 from sys import addaudithook
 
+import yaml
 from lsprotocol import types
 from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path
@@ -20,11 +21,36 @@ from .validation import validate
 _IMAGES = {".png", ".jpg", ".jpeg", ".bmp"}
 # What `_load_file_data` can parse.
 _DATA = {".csv", ".json"}
+_YAML = {".yaml", ".yml"}
 
 
 def images(files: list[Path]) -> list[str]:
     """Templates are matched by bare filename, wherever they sit in the project."""
     return sorted({p.name for p in files if p.suffix.lower() in _IMAGES})
+
+
+def apis(files: list[Path]) -> list[str]:
+    """`collection.api` identifiers, as `invoke_api` splits them."""
+    found = []
+    for path in files:
+        if path.suffix.lower() not in _YAML:
+            continue
+
+        try:
+            data = yaml.safe_load(path.read_text(errors="replace"))
+        except yaml.YAMLError:
+            continue
+        if not isinstance(data, dict):
+            continue
+
+        # The reader unwraps a top-level `api` key, or takes the whole document.
+        api = data.get("api", data)
+        collections = api.get("collections") if isinstance(api, dict) else None
+
+        for name, collection in (collections or {}).items():
+            defined = collection.get("apis") if isinstance(collection, dict) else None
+            found.extend(f"{name}.{api_name}" for api_name in defined or {})
+    return sorted(found)
 
 
 def data_files(root: str | None, files: list[Path], ast: AST) -> list[str]:
@@ -184,6 +210,7 @@ def completions(
         ls._catalogs.get(folder),
         images(files),
         data_files(to_fs_path(folder), files, ast),
+        apis(files),
     )
 
 

@@ -44,6 +44,18 @@ _PARAM_VALUES = {
 }
 
 
+# Test cases the runner lifts out of the normal order. `categorize_test_cases` matches
+# the words anywhere in the name, so these are canonical spellings, not reserved words.
+# No frequency is claimed here: `get_execution_queue` keys its plan by name, so the
+# test-level pair lands once around the first test rather than around every one.
+_LIFECYCLE = {
+    "Suite Setup": "suite setup, before the tests",
+    "Suite Teardown": "suite teardown, after the tests",
+    "Setup": "test-level setup",
+    "Teardown": "test-level teardown",
+}
+
+
 class Cursor:
     """Where a position falls in a csv: its header row, column, and partial field."""
 
@@ -186,7 +198,11 @@ def complete(
 
     if cursor.column == cursor.column_of("test_case"):
         names = sorted({t.name for t in ast.test_cases})
-        return _listing(cursor, names, CompletionItemKind.Value, "test case")
+        return _listing(cursor, names, CompletionItemKind.Value, "test case") + [
+            _item(cursor, name, CompletionItemKind.Event, detail, name)
+            for name, detail in _LIFECYCLE.items()
+            if name not in names
+        ]
 
     return []
 

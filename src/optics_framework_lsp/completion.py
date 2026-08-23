@@ -64,7 +64,10 @@ class Cursor:
         line = lines[position.line] if position.line < len(lines) else ""
         prefix = line[: position.character]
 
-        header = next((row for row in lines if row.strip()), "")
+        self.header_line, header = next(
+            ((i, row) for i, row in enumerate(lines) if row.strip()), (0, "")
+        )
+        self.header = header
         self.headers = [h.strip() for h in next(csv.reader(io.StringIO(header)), [])]
         self.fields = [f.strip() for f in next(csv.reader(io.StringIO(line)), [])]
 
@@ -90,6 +93,16 @@ class Cursor:
             ),
             new_text=text,
         )
+
+
+def _widen_header(cursor: Cursor, step: int) -> list[TextEdit] | None:
+    """`csv.DictReader` drops cells the header does not name, so declare the columns."""
+    if cursor.line == cursor.header_line or cursor.column < len(cursor.headers):
+        return None
+
+    added = "".join(f",param_{i - step}" for i in range(len(cursor.headers), cursor.column + 1))
+    at = Position(line=cursor.header_line, character=len(cursor.header))
+    return [TextEdit(range=Range(start=at, end=at), new_text=added)]
 
 
 def _item(cursor: Cursor, label: str, kind: CompletionItemKind, detail: str, text: str):
@@ -124,6 +137,45 @@ def _variables(cursor: Cursor, ast: AST) -> list[CompletionItem]:
     ]
 
 
+def _params(
+    cursor: Cursor,
+    ast: AST,
+    catalog: Catalog | None,
+    step: int,
+    *,
+    data_files: Sequence[str],
+    apis: Sequence[str],
+) -> list[CompletionItem]:
+    """What belongs in a param column, by the keyword its row names."""
+    name = cursor.step_name(step)
+    param = cursor.column - step - 1
+
+    # `Condition` alternates condition, target. A target is always a module, while a
+    # condition is either a module, optionally !-inverted, or an expression.
+    if name == "condition":
+        modules = _modules(cursor, ast, "!" if cursor.partial.startswith("!") else "")
+        return modules if param % 2 else modules + _variables(cursor, ast)
+
+    kind = _PARAM_KINDS.get(name, {}).get(param)
+    if kind == "module":
+        # A module to run, not an element to find, and written bare.
+        return _modules(cursor, ast)
+    if kind == "file":
+        # Resolved against the project root, so a relative path is what belongs here.
+        return _listing(cursor, data_files, CompletionItemKind.File, "data file")
+    if kind == "api":
+        return _listing(cursor, apis, CompletionItemKind.Value, "api")
+
+    # The catalog names the params, so a fixed-value one is found by name rather
+    # than by listing every keyword that happens to take a `direction`.
+    keyword = (catalog or {}).get(name)
+    names = keyword.params if keyword else []
+    if values := _PARAM_VALUES.get(names[param] if param < len(names) else ""):
+        return _listing(cursor, values, CompletionItemKind.EnumMember, "value")
+
+    return _variables(cursor, ast)
+
+
 def complete(
     text: str,
     position: Position,
@@ -154,33 +206,12 @@ def complete(
         return items
 
     if step is not None and cursor.column > step:
-        name = cursor.step_name(step)
-        param = cursor.column - step - 1
+        items = _params(cursor, ast, catalog, step, data_files=data_files, apis=apis)
 
-        # `Condition` alternates condition, target. A target is always a module, while a
-        # condition is either a module, optionally !-inverted, or an expression.
-        if name == "condition":
-            modules = _modules(cursor, ast, "!" if cursor.partial.startswith("!") else "")
-            return modules if param % 2 else modules + _variables(cursor, ast)
-
-        kind = _PARAM_KINDS.get(name, {}).get(param)
-        if kind == "module":
-            # A module to run, not an element to find, and written bare.
-            return _modules(cursor, ast)
-        if kind == "file":
-            # Resolved against the project root, so a relative path is what belongs here.
-            return _listing(cursor, data_files, CompletionItemKind.File, "data file")
-        if kind == "api":
-            return _listing(cursor, apis, CompletionItemKind.Value, "api")
-
-        # The catalog names the params, so a fixed-value one is found by name rather
-        # than by listing every keyword that happens to take a `direction`.
-        keyword = (catalog or {}).get(name)
-        names = keyword.params if keyword else []
-        if values := _PARAM_VALUES.get(names[param] if param < len(names) else ""):
-            return _listing(cursor, values, CompletionItemKind.EnumMember, "value")
-
-        return _variables(cursor, ast)
+        # Accepting a param the header does not cover declares it in the same edit.
+        for item in items:
+            item.additional_text_edits = _widen_header(cursor, step)
+        return items
 
     # Both name columns continue an existing block, so they offer what already exists.
     if cursor.column in (cursor.column_of("test_step"), cursor.column_of("module_name")):

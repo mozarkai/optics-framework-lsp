@@ -23,6 +23,14 @@ _DATA = {".csv", ".json"}
 _YAML = {".yaml", ".yml"}
 
 
+def installed_at(root: Path) -> float | None:
+    """When the project's optics install last changed, so a new one is noticed."""
+    try:
+        return (root / ".venv" / "bin" / "optics").stat().st_mtime
+    except OSError:
+        return None
+
+
 def images(files: list[Path]) -> list[str]:
     """Templates are matched by bare filename, wherever they sit in the project."""
     return sorted({p.name for p in files if p.suffix.lower() in _IMAGES})
@@ -69,6 +77,8 @@ class OpticsLanguageServer(LanguageServer):
         # without one folder wiping another's diagnostics.
         self._published: defaultdict[str, set[str]] = defaultdict(set)
         self._catalogs: dict[str, keyword_catalog.Catalog | None] = {}
+        # The install each catalog was read from, so `pip install` is picked up.
+        self._probed: dict[str, float | None] = {}
 
     def folder_of(self, uri: str) -> str | None:
         return next((f for f in self.workspace.folders if uri.startswith(f)), None)
@@ -99,6 +109,20 @@ class OpticsLanguageServer(LanguageServer):
                 (uri, document.source if document else path.read_text(errors="replace"))
             )
         return sources
+
+    async def sync_catalog(self, folder_uri: str) -> None:
+        """Read the keyword catalog if the project's optics install has changed."""
+        root = to_fs_path(folder_uri)
+        if root is None:
+            return
+
+        marker = installed_at(Path(root))
+        if folder_uri in self._catalogs and marker == self._probed.get(folder_uri):
+            return
+
+        # Recorded before the await, so keystrokes during a probe do not stack.
+        self._probed[folder_uri] = marker
+        self._catalogs[folder_uri] = await keyword_catalog.load(Path(root))
 
     def validate_folder(self, folder_uri: str) -> None:
         found = validate(
@@ -146,46 +170,45 @@ async def initialized(ls: OpticsLanguageServer, params: types.InitializedParams)
     for folder in ls.workspace.folders:
         # Structural problems first; keyword ones follow once the catalog is read.
         ls.validate_folder(folder)
-
-        root = to_fs_path(folder)
-        if root is not None:
-            ls._catalogs[folder] = await keyword_catalog.load(Path(root))
-            ls.validate_folder(folder)
+        await ls.sync_catalog(folder)
+        ls.validate_folder(folder)
 
 
-def _revalidate(ls: OpticsLanguageServer, uri: str) -> None:
+async def _revalidate(ls: OpticsLanguageServer, uri: str) -> None:
     # Cross-file rules mean one edit can change diagnostics anywhere in the project.
     if folder := ls.folder_of(uri):
+        await ls.sync_catalog(folder)
         ls.validate_folder(folder)
 
 
 @server.feature(types.TEXT_DOCUMENT_DID_OPEN)
-def did_open(ls: OpticsLanguageServer, params: types.DidOpenTextDocumentParams) -> None:
-    _revalidate(ls, params.text_document.uri)
+async def did_open(ls: OpticsLanguageServer, params: types.DidOpenTextDocumentParams) -> None:
+    await _revalidate(ls, params.text_document.uri)
 
 
 @server.feature(types.TEXT_DOCUMENT_DID_CHANGE)
-def did_change(ls: OpticsLanguageServer, params: types.DidChangeTextDocumentParams) -> None:
-    _revalidate(ls, params.text_document.uri)
+async def did_change(ls: OpticsLanguageServer, params: types.DidChangeTextDocumentParams) -> None:
+    await _revalidate(ls, params.text_document.uri)
 
 
 @server.feature(types.TEXT_DOCUMENT_DID_SAVE)
-def did_save(ls: OpticsLanguageServer, params: types.DidSaveTextDocumentParams) -> None:
-    _revalidate(ls, params.text_document.uri)
+async def did_save(ls: OpticsLanguageServer, params: types.DidSaveTextDocumentParams) -> None:
+    await _revalidate(ls, params.text_document.uri)
 
 
 @server.feature(types.WORKSPACE_DID_CHANGE_WATCHED_FILES)
-def did_change_watched_files(
+async def did_change_watched_files(
     ls: OpticsLanguageServer, params: types.DidChangeWatchedFilesParams
 ) -> None:
     for folder in {f for c in params.changes if (f := ls.folder_of(c.uri))}:
+        await ls.sync_catalog(folder)
         ls.validate_folder(folder)
 
 
 @server.feature(types.TEXT_DOCUMENT_DID_CLOSE)
-def did_close(ls: OpticsLanguageServer, params: types.DidCloseTextDocumentParams) -> None:
+async def did_close(ls: OpticsLanguageServer, params: types.DidCloseTextDocumentParams) -> None:
     # The buffer is gone, so fall back to what is on disk.
-    _revalidate(ls, params.text_document.uri)
+    await _revalidate(ls, params.text_document.uri)
 
 
 @server.feature(

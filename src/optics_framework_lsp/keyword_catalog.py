@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import sys
+import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,6 +62,12 @@ class Keyword:
 Catalog = dict[str, Keyword]
 
 
+# Where a venv keeps its executables, and what they are called: `bin/python` on posix,
+# `Scripts\python.exe` on Windows. sysconfig knows the layout, so neither is hardcoded.
+_SCRIPTS = Path(sysconfig.get_paths(scheme="venv", vars={"base": "."})["scripts"]).name
+_EXE = sysconfig.get_config_var("EXE") or ""
+
+
 def slug(name: str | None) -> str:
     """A step name as `_execute_single_keyword` resolves it: whitespace collapsed and
     lowercased. Module names are not — those it looks up raw."""
@@ -71,14 +78,14 @@ def candidates(folder: Path) -> list[Path]:
     """Interpreters to try. `VIRTUAL_ENV` first: every venv tool sets it, and only uv
     and pdm keep the environment in the project."""
     roots = [os.environ.get("VIRTUAL_ENV"), *(folder / n for n in (".venv", "venv", "env"))]
-    pythons = [Path(root) / "bin" / "python" for root in roots if root]
+    pythons = [Path(root) / _SCRIPTS / f"python{_EXE}" for root in roots if root]
     return [p for p in pythons if p.exists()] + [Path(sys.executable)]
 
 
 def installed_at(folder: Path) -> tuple[str, float] | None:
     """The optics install a catalog would come from, so a later one is noticed."""
     for python in candidates(folder):
-        script = python.with_name("optics")
+        script = python.with_name(f"optics{_EXE}")
         try:
             return str(script), script.stat().st_mtime
         except OSError:

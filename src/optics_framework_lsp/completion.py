@@ -34,6 +34,15 @@ _PARAM_KINDS: dict[str, dict[int, ParamKind]] = {
     "invoke api": {0: "api"},
 }
 
+# Values a param accepts, by param name. Documented in docstrings only, so the catalog
+# cannot supply them: `direction` is checked as `in ("up", "down")` by the appium driver,
+# and `rule` as `any(...) if rule == 'any' else all(...)`.
+_PARAM_VALUES = {
+    "direction": ["up", "down", "left", "right"],
+    "rule": ["any", "all"],
+    "element_state": ["visible", "invisible", "enabled", "disabled"],
+}
+
 
 class Cursor:
     """Where a position falls in a csv: its header row, column, and partial field."""
@@ -150,6 +159,17 @@ def complete(
             return [
                 _item(cursor, name, CompletionItemKind.Value, "api", name) for name in apis
             ]
+
+        # The catalog names the params, so a fixed-value one is found by name rather
+        # than by listing every keyword that happens to take a `direction`.
+        keyword = (catalog or {}).get(name)
+        if keyword is not None and param < len(keyword.params):
+            values = _PARAM_VALUES.get(keyword.params[param])
+            if values:
+                return [
+                    _item(cursor, value, CompletionItemKind.EnumMember, "value", value)
+                    for value in values
+                ]
 
         return _variables(cursor, ast)
 

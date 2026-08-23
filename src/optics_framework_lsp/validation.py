@@ -188,7 +188,8 @@ def _unknown_elements(ast: AST) -> Iterator[_Finding]:
 
 
 def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
-    modules = {m.name.lower() for m in ast.modules}
+    # Raw names: `get_module_definition` is a plain dict lookup, so case matters.
+    modules = {m.name for m in ast.modules}
 
     for module in ast.modules:
         for step in module.steps:
@@ -197,7 +198,7 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
 
             # A step calls a keyword or, for nested modules, another module. Only the
             # keyword half is normalised: the runner looks a module up by its raw name.
-            if step.step_name.lower() in modules:
+            if step.step_name in modules:
                 continue
 
             keyword = catalog.get(slug(step.step_name))

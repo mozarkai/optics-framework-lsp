@@ -23,7 +23,7 @@ from .validation import declared, undefined
 
 
 # Param positions, counted after `module_step`, that hold a module name.
-_MODULE_PARAMS = {"run loop": {0}}
+_MODULE_PARAMS = {"run loop": {0}, "execute module": {0}}
 
 
 class Cursor:
@@ -106,8 +106,8 @@ def complete(
         return items
 
     if step is not None and cursor.column > step:
-        # `Run Loop` hands its target to `execute_module`, so that param names a module
-        # rather than an element, and it is written bare.
+        # `Execute Module`, and `Run Loop` via its target, name a module to run rather
+        # than an element to find, and they are written bare.
         if (cursor.column - step - 1) in _MODULE_PARAMS.get(cursor.step_name(step), ()):
             return _modules(cursor, ast)
 

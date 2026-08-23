@@ -18,7 +18,7 @@ from lsprotocol.types import (
     TextEdit,
 )
 
-from .keyword_catalog import Catalog
+from .keyword_catalog import Catalog, slug
 from .parser.ast import AST
 from .validation import declared, undefined
 
@@ -82,7 +82,7 @@ class Cursor:
         return self.headers.index(header) if header in self.headers else None
 
     def step_name(self, step: int) -> str:
-        return self.fields[step].lower() if step < len(self.fields) else ""
+        return slug(self.fields[step]) if step < len(self.fields) else ""
 
     def replacement(self, text: str) -> TextEdit:
         """Replace the whole field, so ${b} completes without nesting into ${${b}}."""

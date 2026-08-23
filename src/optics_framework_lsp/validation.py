@@ -9,7 +9,7 @@ from functools import partial
 
 from lsprotocol.types import Diagnostic, DiagnosticSeverity, Position, Range
 
-from .keyword_catalog import Catalog
+from .keyword_catalog import Catalog, slug
 from .parser.ast import AST
 
 SOURCE = "optics"
@@ -103,7 +103,7 @@ def _duplicates(ast: AST) -> Iterator[_Finding]:
 
 def _module_args(step_name: str | None, count: int) -> set[int]:
     """Which params of a step name a module to run, given how many it was given."""
-    name = (step_name or "").lower()
+    name = slug(step_name)
     if name in ("run loop", "execute module"):
         return {0}
     if name == "condition":
@@ -148,7 +148,7 @@ def declared(ast: AST) -> set[str]:
     names = set()
     for module in ast.modules:
         for step in module.steps:
-            where = _DECLARES.get((step.step_name or "").lower())
+            where = _DECLARES.get(slug(step.step_name))
             if where is not None:
                 names.update(_bare(d) for d in step.params[where] if d)
     return names
@@ -159,7 +159,7 @@ def _references(ast: AST) -> Iterator[tuple[str, int, str]]:
     for module in ast.modules:
         for step in module.steps:
             # A declaring keyword names its target, it does not reference it.
-            declares = (step.step_name or "").lower() in _DECLARES
+            declares = slug(step.step_name) in _DECLARES
             params = step.params[1:] if declares else step.params
 
             for text in (step.step_name or "", *params):
@@ -195,12 +195,12 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
             if not step.step_name:
                 continue
 
-            # A step calls a keyword or, for nested modules, another module.
-            name = step.step_name.lower()
-            if name in modules:
+            # A step calls a keyword or, for nested modules, another module. Only the
+            # keyword half is normalised: the runner looks a module up by its raw name.
+            if step.step_name.lower() in modules:
                 continue
 
-            keyword = catalog.get(name)
+            keyword = catalog.get(slug(step.step_name))
             if keyword is None:
                 yield _diag(
                     module.uri,

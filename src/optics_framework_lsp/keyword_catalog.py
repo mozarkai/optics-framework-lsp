@@ -61,6 +61,12 @@ class Keyword:
 Catalog = dict[str, Keyword]
 
 
+def slug(name: str | None) -> str:
+    """A step name as `_execute_single_keyword` resolves it: whitespace collapsed and
+    lowercased. Module names are not — those it looks up raw."""
+    return " ".join((name or "").split()).lower()
+
+
 def candidates(folder: Path) -> list[Path]:
     """Interpreters to try. `VIRTUAL_ENV` first: every venv tool sets it, and only uv
     and pdm keep the environment in the project."""

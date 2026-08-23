@@ -23,14 +23,6 @@ _DATA = {".csv", ".json"}
 _YAML = {".yaml", ".yml"}
 
 
-def installed_at(root: Path) -> float | None:
-    """When the project's optics install last changed, so a new one is noticed."""
-    try:
-        return (root / ".venv" / "bin" / "optics").stat().st_mtime
-    except OSError:
-        return None
-
-
 def images(files: list[Path]) -> list[str]:
     """Templates are matched by bare filename, wherever they sit in the project."""
     return sorted({p.name for p in files if p.suffix.lower() in _IMAGES})
@@ -78,7 +70,7 @@ class OpticsLanguageServer(LanguageServer):
         self._published: defaultdict[str, set[str]] = defaultdict(set)
         self._catalogs: dict[str, keyword_catalog.Catalog | None] = {}
         # The install each catalog was read from, so `pip install` is picked up.
-        self._probed: dict[str, float | None] = {}
+        self._probed: dict[str, tuple[str, float] | None] = {}
 
     def folder_of(self, uri: str) -> str | None:
         return next((f for f in self.workspace.folders if uri.startswith(f)), None)
@@ -116,7 +108,7 @@ class OpticsLanguageServer(LanguageServer):
         if root is None:
             return
 
-        marker = installed_at(Path(root))
+        marker = keyword_catalog.installed_at(Path(root))
         if folder_uri in self._catalogs and marker == self._probed.get(folder_uri):
             return
 

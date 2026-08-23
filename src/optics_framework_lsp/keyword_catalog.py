@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,11 +61,28 @@ class Keyword:
 Catalog = dict[str, Keyword]
 
 
-async def load(folder: Path) -> Catalog | None:
-    """None when optics-framework is not importable; callers then skip keyword rules."""
-    venv = folder / ".venv" / "bin" / "python"
+def candidates(folder: Path) -> list[Path]:
+    """Interpreters to try. `VIRTUAL_ENV` first: every venv tool sets it, and only uv
+    and pdm keep the environment in the project."""
+    roots = [os.environ.get("VIRTUAL_ENV"), *(folder / n for n in (".venv", "venv", "env"))]
+    pythons = [Path(root) / "bin" / "python" for root in roots if root]
+    return [p for p in pythons if p.exists()] + [Path(sys.executable)]
+
+
+def installed_at(folder: Path) -> tuple[str, float] | None:
+    """The optics install a catalog would come from, so a later one is noticed."""
+    for python in candidates(folder):
+        script = python.with_name("optics")
+        try:
+            return str(script), script.stat().st_mtime
+        except OSError:
+            continue
+    return None
+
+
+async def _probe(python: Path) -> Catalog | None:
     process = await asyncio.create_subprocess_exec(
-        str(venv) if venv.exists() else sys.executable,
+        str(python),
         "-c",
         _PROBE,
         stdout=asyncio.subprocess.PIPE,
@@ -78,3 +96,11 @@ async def load(folder: Path) -> Catalog | None:
         name.lower(): Keyword(**signature)
         for name, signature in json.loads(stdout).items()
     }
+
+
+async def load(folder: Path) -> Catalog | None:
+    """None when no candidate interpreter can import optics-framework."""
+    for python in candidates(folder):
+        if (catalog := await _probe(python)) is not None:
+            return catalog
+    return None

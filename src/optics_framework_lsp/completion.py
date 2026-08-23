@@ -68,7 +68,7 @@ class Cursor:
             ((i, row) for i, row in enumerate(lines) if row.strip()), (0, "")
         )
         self.header = header
-        self.headers = [h.strip() for h in next(csv.reader(io.StringIO(header)), [])]
+        self.headers = [h.strip().lower() for h in next(csv.reader(io.StringIO(header)), [])]
         self.fields = [f.strip() for f in next(csv.reader(io.StringIO(line)), [])]
 
         # csv, not prefix.count(","), so a quoted comma in an XPath does not shift us.

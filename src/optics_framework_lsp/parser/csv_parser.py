@@ -39,7 +39,9 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
             continue
 
         (header_cells, _), *body = rows
-        headers = [h.strip() for h in header_cells]
+        # Lowercased, as `read_csv_headers` does: the shipped samples all write
+        # `Element_Name,Element_ID`, and classification is case-insensitive.
+        headers = [h.strip().lower() for h in header_cells]
 
         is_test_case_csv = "test_case" in headers and "test_step" in headers
         is_module_csv = "module_name" in headers and "module_step" in headers
@@ -101,7 +103,17 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
 
             if is_element_csv:
                 name = _cell(values, headers.index("element_name"))
-                value = _cell(values, headers.index("element_id"))
+                # Any `element_id*` column holds a locator: `read_elements` collects
+                # them all, so a name with only an `Element_ID_xpath` is still defined.
+                value = next(
+                    (
+                        cell
+                        for i, header in enumerate(headers)
+                        if header.startswith("element_id")
+                        and (cell := _cell(values, i))
+                    ),
+                    None,
+                )
 
                 if name is None or value is None:
                     continue

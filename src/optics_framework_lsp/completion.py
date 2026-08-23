@@ -22,6 +22,10 @@ from .parser.ast import AST
 from .validation import declared, undefined
 
 
+# Param positions, counted after `module_step`, that hold a module name.
+_MODULE_PARAMS = {"run loop": {0}}
+
+
 class Cursor:
     """Where a position falls in a csv: its header row, column, and partial field."""
 
@@ -43,6 +47,9 @@ class Cursor:
 
     def column_of(self, header: str) -> int | None:
         return self.headers.index(header) if header in self.headers else None
+
+    def step_name(self, step: int) -> str:
+        return self.fields[step].lower() if step < len(self.fields) else ""
 
     def replacement(self, text: str) -> TextEdit:
         """Replace the whole field, so ${b} completes without nesting into ${${b}}."""
@@ -99,6 +106,11 @@ def complete(
         return items
 
     if step is not None and cursor.column > step:
+        # `Run Loop` hands its target to `execute_module`, so that param names a module
+        # rather than an element, and it is written bare.
+        if (cursor.column - step - 1) in _MODULE_PARAMS.get(cursor.step_name(step), ()):
+            return _modules(cursor, ast)
+
         names = {e.name for e in ast.elements} | declared(ast)
         return [
             _item(cursor, name, CompletionItemKind.Variable, "element", f"${{{name}}}")
@@ -140,7 +152,7 @@ def signature(text: str, position: Position, catalog: Catalog | None) -> Signatu
     if not catalog or step is None or cursor.column <= step:
         return None
 
-    name = cursor.fields[step].lower() if step < len(cursor.fields) else ""
+    name = cursor.step_name(step)
     keyword = catalog.get(name)
     if keyword is None:
         return None

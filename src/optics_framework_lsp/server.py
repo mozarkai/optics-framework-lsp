@@ -13,6 +13,7 @@ from pygls.uris import to_fs_path
 from . import completion, keyword_catalog
 from .parser.ast import AST
 from .parser.csv_parser import parse_csv_sources
+from .symbols import symbols
 from .validation import validate
 
 
@@ -226,6 +227,15 @@ def completions(
         data_files=data_files(to_fs_path(folder), files, ast),
         apis=apis(files),
     )
+
+
+@server.feature(types.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
+def document_symbols(
+    ls: OpticsLanguageServer, params: types.DocumentSymbolParams
+) -> list[types.DocumentSymbol]:
+    # One file's outline, so the rest of the workspace is not parsed.
+    uri = params.text_document.uri
+    return symbols(parse_csv_sources([(uri, ls.workspace.get_text_document(uri).source)]))
 
 
 @server.feature(types.TEXT_DOCUMENT_HOVER)

@@ -17,8 +17,6 @@ from .symbols import symbols
 from .validation import validate
 
 
-# Only these classify as Image in `determine_element_type` (.tiff discovers but never matches).
-_IMAGES = {".png", ".jpg", ".jpeg", ".bmp"}
 # What `_load_file_data` can parse.
 _DATA = {".csv", ".json"}
 _YAML = {".yaml", ".yml"}
@@ -26,7 +24,7 @@ _YAML = {".yaml", ".yml"}
 
 def images(files: list[Path]) -> list[str]:
     """Templates are matched by bare filename, wherever they sit in the project."""
-    return sorted({p.name for p in files if p.suffix.lower() in _IMAGES})
+    return sorted({p.name for p in files if p.suffix.lower() in completion.IMAGE_SUFFIXES})
 
 
 def apis(files: list[Path]) -> list[str]:
@@ -251,6 +249,25 @@ def hover(ls: OpticsLanguageServer, params: types.HoverParams) -> types.Hover | 
         ls.workspace.get_text_document(params.text_document.uri).source,
         params.position,
         ls._catalogs.get(folder),
+    )
+
+
+@server.feature(types.TEXT_DOCUMENT_REFERENCES)
+def references(
+    ls: OpticsLanguageServer, params: types.ReferenceParams
+) -> list[types.Location]:
+    uri = params.text_document.uri
+    folder = ls.folder_of(uri)
+    if folder is None:
+        return []
+
+    ast = parse_csv_sources(ls.sources(ls.files(folder)))
+    return completion.references(
+        ls.workspace.get_text_document(uri).source,
+        params.position,
+        ast,
+        ls._catalogs.get(folder),
+        include_declaration=params.context.include_declaration,
     )
 
 

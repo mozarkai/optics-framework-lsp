@@ -169,7 +169,7 @@ def _module_args(step_name: str | None, count: int) -> set[int]:
     return set()
 
 
-def _module_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
+def module_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
     """Every place a module is named: a test case step, or a param that runs one."""
     for test_case in ast.test_cases:
         for step in test_case.steps:
@@ -184,12 +184,29 @@ def _module_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
                 yield module.uri, step.row, params[i]
 
 
+def module_conditions(ast: AST) -> Iterator[tuple[str, int, str]]:
+    """`Condition` cells that name a module to run, with the `!` stripped as
+    `_is_module_condition` strips it. Validation ignores these because a condition may be
+    an expression instead, but the ones that do name a module are real call sites."""
+    for module in ast.modules:
+        for step in module.steps:
+            if slug(step.step_name) != "condition":
+                continue
+
+            # Whatever is not a target is a condition, the bare else-target included.
+            params = [p for p in step.params if p]
+            targets = _module_args(step.step_name, len(params))
+            for i, param in enumerate(params):
+                if i not in targets:
+                    yield module.uri, step.row, param.removeprefix("!").strip()
+
+
 def _unknown_modules(ast: AST) -> Iterator[_Finding]:
     # A ${name} is reported like any other: nothing substitutes it first. The runner
     # hands params to the keyword untouched, and `execute_module` indexes the dict raw.
     known = {b.name for b in ast.modules}
 
-    for uri, row, name in _module_refs(ast):
+    for uri, row, name in module_refs(ast):
         if name not in known:
             yield _diag(
                 uri,
@@ -200,18 +217,23 @@ def _unknown_modules(ast: AST) -> Iterator[_Finding]:
             )
 
 
-def declared(ast: AST) -> set[str]:
-    """Names bound at run time rather than defined in an elements csv."""
-    names = set()
+def declarations(ast: AST) -> Iterator[tuple[str, int, str]]:
+    """Every place a name is bound at run time, as uri, row, name."""
     for module in ast.modules:
         for step in module.steps:
             where = _DECLARES.get(slug(step.step_name))
             if where is not None:
-                names.update(_bare(d) for d in step.params[where] if d)
-    return names
+                for bound in step.params[where]:
+                    if bound:
+                        yield module.uri, step.row, _bare(bound)
 
 
-def _references(ast: AST) -> Iterator[tuple[str, int, str]]:
+def declared(ast: AST) -> set[str]:
+    """Names bound at run time rather than defined in an elements csv."""
+    return {name for _, _, name in declarations(ast)}
+
+
+def element_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
     """Every ${name} a module step reads, as uri, row, name."""
     for module in ast.modules:
         for step in module.steps:
@@ -227,13 +249,13 @@ def _references(ast: AST) -> Iterator[tuple[str, int, str]]:
 def undefined(ast: AST) -> set[str]:
     """Names read but never defined: what element-not-found reports."""
     known = {e.name for e in ast.elements} | declared(ast)
-    return {name for _, _, name in _references(ast) if name not in known}
+    return {name for _, _, name in element_refs(ast) if name not in known}
 
 
 def _unknown_elements(ast: AST) -> Iterator[_Finding]:
     known = {e.name for e in ast.elements} | declared(ast)
 
-    for uri, row, name in _references(ast):
+    for uri, row, name in element_refs(ast):
         if name not in known:
             yield _diag(
                 uri,

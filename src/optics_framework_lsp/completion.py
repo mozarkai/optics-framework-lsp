@@ -25,7 +25,15 @@ from lsprotocol.types import (
 
 from .keyword_catalog import Catalog, Keyword, slug
 from .parser.ast import AST
-from .validation import VAR, declared, undefined
+from .validation import (
+    VAR,
+    declarations,
+    declared,
+    element_refs,
+    module_conditions,
+    module_refs,
+    undefined,
+)
 
 
 ParamKind = Literal["module", "file", "api"]
@@ -333,6 +341,100 @@ def definition(
     # Condition writes an inverted module as `!Name`; the runner strips the same way.
     wanted = field.removeprefix("!")
     return [_at(m.uri, m.start_row) for m in ast.modules if m.name == wanted]
+
+
+# Only these classify as Image in `determine_element_type` (.tiff discovers but never
+# matches), so an id ending in one is a template filename, not an xpath or literal text.
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".bmp")
+
+
+def _symbol_at(cursor: Cursor, catalog: Catalog | None) -> tuple[str, str] | None:
+    """What the cursor is on, as a kind and the name to match against."""
+    field = cursor.field(cursor.column)
+    if not field:
+        return None
+
+    step = cursor.column_of("module_step")
+    if cursor.column in (cursor.column_of("module_name"), cursor.column_of("test_step")):
+        return "module", field
+    if cursor.column == cursor.column_of("element_name"):
+        return "element", field
+    if cursor.column == cursor.column_of("element_id"):
+        # Only an image is shared by name; an xpath is written per row.
+        return ("image", field) if field.lower().endswith(IMAGE_SUFFIXES) else None
+
+    if step is None or cursor.column < step:
+        return None
+    if cursor.column == step:
+        # A keyword beats a same-named module here, as `_execute_single_keyword` resolves.
+        return ("keyword" if slug(field) in (catalog or {}) else "module"), field
+
+    if names := VAR.findall(field):
+        return "element", names[0]
+
+    kind = _PARAM_KINDS.get(cursor.step_name(step), {}).get(cursor.column - step - 1)
+    if kind in ("file", "api"):
+        return kind, field
+    return "module", field.removeprefix("!")
+
+
+def references(
+    text: str,
+    position: Position,
+    ast: AST,
+    catalog: Catalog | None,
+    *,
+    include_declaration: bool = False,
+) -> list[Location]:
+    """Every place the name under the cursor is used, and optionally where it is bound."""
+    cursor = Cursor(text, position)
+    found = _symbol_at(cursor, catalog)
+    if found is None:
+        return []
+
+    kind, name = found
+    declared_at: list[Location] = []
+
+    if kind == "module":
+        # A Condition names a module to run, which validation cannot assume, and so does
+        # a step cell — but only when no keyword claims the name first.
+        seen = list(module_refs(ast)) + list(module_conditions(ast)) + [
+            (m.uri, step.row, step.step_name)
+            for m in ast.modules
+            for step in m.steps
+            if step.step_name and slug(step.step_name) not in (catalog or {})
+        ]
+        uses = [_at(uri, row) for uri, row, n in seen if n == name]
+        declared_at = [_at(m.uri, m.start_row) for m in ast.modules if m.name == name]
+    elif kind == "element":
+        uses = [_at(uri, row) for uri, row, n in element_refs(ast) if n == name]
+        declared_at = [_at(e.uri, e.row) for e in ast.elements if e.name == name] + [
+            _at(uri, row) for uri, row, n in declarations(ast) if n == name
+        ]
+    elif kind == "keyword":
+        # The framework defines it, so there is nothing here to declare.
+        wanted = slug(name)
+        uses = [
+            _at(module.uri, step.row)
+            for module in ast.modules
+            for step in module.steps
+            if slug(step.step_name) == wanted
+        ]
+    elif kind == "image":
+        uses = [_at(e.uri, e.row) for e in ast.elements if e.value == name]
+    else:
+        # A file or an api, by the same table completion offers.
+        uses = [
+            _at(m.uri, step.row)
+            for m in ast.modules
+            for step in m.steps
+            for i, param in enumerate(p for p in step.params if p)
+            if _PARAM_KINDS.get(slug(step.step_name), {}).get(i) == kind and param == name
+        ]
+
+    # Sorted, so a result reads top to bottom per file rather than by rule order.
+    uses.sort(key=lambda at: (at.uri, at.range.start.line))
+    return uses + declared_at if include_declaration else uses
 
 
 def hover(text: str, position: Position, catalog: Catalog | None) -> Hover | None:

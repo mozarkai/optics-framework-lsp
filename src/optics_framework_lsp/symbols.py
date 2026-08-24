@@ -79,4 +79,11 @@ def symbols(ast: AST) -> list[DocumentSymbol]:
     for element in ast.elements:
         grouped.setdefault(element.name, []).append(element)
 
-    return found + [_element(rows) for rows in grouped.values()]
+    found += [_element(rows) for rows in grouped.values()]
+
+    # An error code has nothing under it: the row is the whole definition.
+    return found + [
+        _symbol(error.code, SymbolKind.Constant, error.match, error.row, error.row)
+        for error in ast.error_definitions
+        if error.code
+    ]

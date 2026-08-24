@@ -28,6 +28,16 @@ class Element:
 
 
 @dataclass(slots=True)
+class ErrorDefinition:
+    # Either may be blank: `read_error_definitions` drops such a row, so we keep it to
+    # report it rather than dropping it too.
+    code: str
+    match: str
+    uri: str
+    row: int
+
+
+@dataclass(slots=True)
 class Step:
     step_name: str | None
     row: int
@@ -47,4 +57,5 @@ class AST:
     test_cases: list[Block] = field(default_factory=list)
     modules: list[Block] = field(default_factory=list)
     elements: list[Element] = field(default_factory=list)
+    error_definitions: list[ErrorDefinition] = field(default_factory=list)
     csv_issues: list[CsvIssue] = field(default_factory=list)

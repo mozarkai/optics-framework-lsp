@@ -83,6 +83,8 @@ def _duplicates(ast: AST) -> Iterator[_Finding]:
         [("test case", b.name, b.uri, b.start_row, None) for b in ast.test_cases]
         + [("module", b.name, b.uri, b.start_row, None) for b in ast.modules]
         + [("element", e.name, e.uri, e.row, e.value) for e in ast.elements]
+        # `read_error_definitions` keys its dict by code, so a repeat overwrites.
+        + [("error code", e.code, e.uri, e.row, None) for e in ast.error_definitions if e.code]
     ):
         seen[(kind, name, uri)].append((row, value))
 
@@ -103,6 +105,20 @@ def _duplicates(ast: AST) -> Iterator[_Finding]:
         for row in rows:
             yield _diag(
                 uri, row, DiagnosticSeverity.Warning, code, f"Duplicate {kind} {name!r}"
+            )
+
+
+def _incomplete_errors(ast: AST) -> Iterator[_Finding]:
+    """A row needs both columns; `read_error_definitions` silently drops it otherwise."""
+    for error in ast.error_definitions:
+        if not (error.code and error.match):
+            missing = "error_code" if not error.code else "match_string"
+            yield _diag(
+                error.uri,
+                error.row,
+                DiagnosticSeverity.Warning,
+                "error-definition-incomplete",
+                f"Row has no {missing}, so it never matches",
             )
 
 
@@ -232,7 +248,7 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
 
 
 def validate(ast: AST, catalog: Catalog | None = None) -> dict[str, list[Diagnostic]]:
-    rules = [_hygiene, _duplicates, _unknown_modules, _unknown_elements]
+    rules = [_hygiene, _duplicates, _unknown_modules, _unknown_elements, _incomplete_errors]
     if catalog is not None:
         rules.append(partial(_unknown_steps, catalog=catalog))
 

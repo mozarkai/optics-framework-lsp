@@ -6,7 +6,7 @@ import csv
 import io
 from collections.abc import Iterable
 
-from .ast import AST, Block, CsvIssue, Element, Step
+from .ast import AST, Block, CsvIssue, Element, ErrorDefinition, Step
 
 _Row = tuple[list[str], int]
 
@@ -46,9 +46,10 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
         is_test_case_csv = "test_case" in headers and "test_step" in headers
         is_module_csv = "module_name" in headers and "module_step" in headers
         is_element_csv = "element_name" in headers and "element_id" in headers
+        is_error_csv = "error_code" in headers and "match_string" in headers
 
         # Unrecognised CSVs (test data, device caps) have schemas we don't know.
-        if not (is_test_case_csv or is_module_csv or is_element_csv):
+        if not (is_test_case_csv or is_module_csv or is_element_csv or is_error_csv):
             continue
 
         # Empty line is fine; whitespace-only is not.
@@ -119,5 +120,13 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
                     continue
 
                 ast.elements.append(Element(name=name, value=value, uri=uri, row=row))
+
+            if is_error_csv:
+                code = _cell(values, headers.index("error_code")) or ""
+                match = _cell(values, headers.index("match_string")) or ""
+                if code or match:
+                    ast.error_definitions.append(
+                        ErrorDefinition(code=code, match=match, uri=uri, row=row)
+                    )
 
     return ast

@@ -40,6 +40,22 @@ def spans(line: str) -> list[tuple[int, int]]:
     return spans
 
 
+def sheet(text: str) -> tuple[list[str], list[tuple[int, list[str]]]]:
+    """The header names, lowercased, and each body row as its 0-based line and cells."""
+    lines = text.splitlines()
+    header = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if header is None:
+        return [], []
+
+    def cells(line: str) -> list[str]:
+        return [f.strip() for f in next(csv.reader(io.StringIO(line)), [])]
+
+    return (
+        [h.lower() for h in cells(lines[header])],
+        [(i, cells(line)) for i, line in enumerate(lines) if line.strip() and i != header],
+    )
+
+
 def _cell(values: list[str], i: int) -> str | None:
     return (values[i] if i < len(values) else "") or None
 

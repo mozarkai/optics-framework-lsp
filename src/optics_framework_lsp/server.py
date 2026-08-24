@@ -13,6 +13,7 @@ from pygls.uris import to_fs_path
 from . import completion, keyword_catalog
 from .parser.ast import AST
 from .parser.csv_parser import parse_csv_sources
+from . import rename as renaming
 from .symbols import symbols
 from .tokens import LEGEND, MODIFIERS, tokens
 from .validation import validate
@@ -281,6 +282,36 @@ def hover(ls: OpticsLanguageServer, params: types.HoverParams) -> types.Hover | 
         ls.workspace.get_text_document(params.text_document.uri).source,
         params.position,
         ls._catalogs.get(folder),
+    )
+
+
+@server.feature(types.TEXT_DOCUMENT_RENAME, types.RenameOptions(prepare_provider=True))
+def rename(ls: OpticsLanguageServer, params: types.RenameParams) -> types.WorkspaceEdit | None:
+    uri = params.text_document.uri
+    folder = ls.folder_of(uri)
+    if folder is None:
+        return None
+
+    # Every file, because the runner keys by name and a missed cell changes what runs.
+    edits = renaming.rename(
+        ls.sources(ls.files(folder)),
+        ls._catalogs.get(folder),
+        ls.workspace.get_text_document(uri).source,
+        params.position,
+        params.new_name,
+    )
+    return types.WorkspaceEdit(changes=edits) if edits else None
+
+
+@server.feature(types.TEXT_DOCUMENT_PREPARE_RENAME)
+def prepare_rename(
+    ls: OpticsLanguageServer, params: types.PrepareRenameParams
+) -> types.Range | None:
+    folder = ls.folder_of(params.text_document.uri)
+    return renaming.prepare(
+        ls.workspace.get_text_document(params.text_document.uri).source,
+        params.position,
+        ls._catalogs.get(folder) if folder else None,
     )
 
 

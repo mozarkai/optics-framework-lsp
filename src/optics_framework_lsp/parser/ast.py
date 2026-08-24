@@ -20,9 +20,20 @@ class CsvIssue:
 
 
 @dataclass(slots=True)
+class Locator:
+    text: str
+    # Where the cell sits in its row, so a symbol can point at it rather than at the
+    # line: two locators on one row are otherwise indistinguishable to a client.
+    start: int
+    end: int
+
+
+@dataclass(slots=True)
 class Element:
     name: str
-    value: str
+    # Every `element_id*` cell on the row: `read_elements` collects them all and tries
+    # each in turn, so one row can carry an xpath and a text fallback.
+    locators: list[Locator]
     uri: str
     row: int
 

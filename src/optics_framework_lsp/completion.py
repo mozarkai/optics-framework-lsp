@@ -110,6 +110,9 @@ class Cursor:
     def field(self, column: int) -> str:
         return self.fields[column] if column < len(self.fields) else ""
 
+    def header_at(self, column: int) -> str:
+        return self.headers[column] if column < len(self.headers) else ""
+
     def step_name(self, step: int) -> str:
         return slug(self.field(step))
 
@@ -260,8 +263,9 @@ def complete(
         return _listing(cursor, sorted(undefined(ast)), kind, "used, not defined")
 
     # An id is usually an xpath or literal text, which we cannot guess, but an image
-    # locator is the bare filename of a template somewhere in the project.
-    if cursor.column == cursor.column_of("element_id"):
+    # locator is the bare filename of a template somewhere in the project. Any
+    # `element_id*` column holds one, as `read_elements` reads them all.
+    if cursor.header_at(cursor.column).startswith("element_id"):
         return _listing(cursor, images, CompletionItemKind.File, "template image")
 
     if cursor.column == cursor.column_of("test_case"):
@@ -359,7 +363,7 @@ def _symbol_at(cursor: Cursor, catalog: Catalog | None) -> tuple[str, str] | Non
         return "module", field
     if cursor.column == cursor.column_of("element_name"):
         return "element", field
-    if cursor.column == cursor.column_of("element_id"):
+    if cursor.header_at(cursor.column).startswith("element_id"):
         # Only an image is shared by name; an xpath is written per row.
         return ("image", field) if field.lower().endswith(IMAGE_SUFFIXES) else None
 
@@ -421,7 +425,11 @@ def references(
             if slug(step.step_name) == wanted
         ]
     elif kind == "image":
-        uses = [_at(e.uri, e.row) for e in ast.elements if e.value == name]
+        uses = [
+            _at(e.uri, e.row)
+            for e in ast.elements
+            if any(locator.text == name for locator in e.locators)
+        ]
     else:
         # A file or an api, by the same table completion offers.
         uses = [

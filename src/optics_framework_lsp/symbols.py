@@ -15,11 +15,16 @@ def _symbol(
     first: int,
     last: int,
     children: list[DocumentSymbol] | None = None,
+    chars: tuple[int, int] | None = None,
 ) -> DocumentSymbol:
-    """Rows are 1-based, so a symbol runs from its first line to just past its last."""
+    """Rows are 1-based, so a symbol runs from its first line to just past its last —
+    unless it is a single cell, which spans its own columns instead. Two cells on one
+    row need distinct ranges or a client is free to treat them as one symbol."""
+    line = max(first - 1, 0)
+    start, end = chars or (0, 0)
     at = Range(
-        start=Position(line=max(first - 1, 0), character=0),
-        end=Position(line=max(last, 0), character=0),
+        start=Position(line=line, character=start),
+        end=Position(line=line if chars else max(last, 0), character=end),
     )
     return DocumentSymbol(
         name=name,
@@ -56,12 +61,17 @@ def _block(block: Block, kind: SymbolKind) -> DocumentSymbol:
 def _element(rows: list[Element]) -> DocumentSymbol:
     """One element, with a child per locator: the fallbacks tried in order."""
     locators = [
-        _symbol(row.value, SymbolKind.String, "", row.row, row.row) for row in rows
+        _symbol(
+            found.text, SymbolKind.String, "", row.row, row.row,
+            chars=(found.start, found.end),
+        )
+        for row in rows
+        for found in row.locators
     ]
     return _symbol(
         rows[0].name,
         SymbolKind.Variable,
-        _count(len(rows), "locator"),
+        _count(len(locators), "locator"),
         rows[0].row,
         rows[-1].row,
         locators,

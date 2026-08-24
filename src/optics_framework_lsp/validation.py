@@ -83,15 +83,18 @@ def _duplicates(ast: AST) -> Iterator[_Finding]:
     for kind, name, uri, row, value in (
         [("test case", b.name, b.uri, b.start_row, None) for b in ast.test_cases]
         + [("module", b.name, b.uri, b.start_row, None) for b in ast.modules]
-        + [("element", e.name, e.uri, e.row, e.value) for e in ast.elements]
+        + [
+            ("element", e.name, e.uri, e.row, tuple(l.text for l in e.locators))
+            for e in ast.elements
+        ]
     ):
         seen[(kind, name, uri)].append((row, value))
 
     for (kind, name, uri), entries in seen.items():
         if kind == "element":
             # Repeating a name with different ids is how fallback locators are written:
-            # `read_elements` gathers them into one list. Repeating the same id is only
-            # untidy: it runs the same, but a failed lookup retries that id twice.
+            # `read_elements` gathers them into one list. Repeating the whole row is only
+            # untidy: it runs the same, but a failed lookup retries those ids twice.
             repeated = Counter(value for _, value in entries)
             rows = [row for row, value in entries if repeated[value] > 1]
         else:

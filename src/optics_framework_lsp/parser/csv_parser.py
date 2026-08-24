@@ -6,12 +6,12 @@ import csv
 import io
 from collections.abc import Iterable
 
-from .ast import AST, Block, CsvIssue, Element, ErrorDefinition, Step
+from .ast import AST, Block, CsvIssue, Element, ErrorDefinition, Locator, Step
 
 _Row = tuple[list[str], int]
 
 
-def _parse_rows(content: str) -> tuple[list[_Row], list[_Row]]:
+def _parse_rows(content: str) -> tuple[list[_Row], list[_Row], list[str]]:
     # `csv.reader` is already lenient about stray quotes and column counts.
     text = content.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
     reader = csv.reader(io.StringIO(text, newline=""))
@@ -23,7 +23,21 @@ def _parse_rows(content: str) -> tuple[list[_Row], list[_Row]]:
         target = blank_rows if all(c.strip() == "" for c in cells) else rows
         target.append((cells, reader.line_num))
 
-    return rows, blank_rows
+    return rows, blank_rows, text.split("\n")
+
+
+def _spans(line: str) -> list[tuple[int, int]]:
+    """Where each field's text sits in its line, quotes and padding trimmed off."""
+    spans, quoted, start = [], False, 0
+    # The added comma flushes the last field without needing a second pass.
+    for i, char in enumerate(line + ","):
+        if char == '"':
+            quoted = not quoted
+        elif char == "," and not quoted:
+            text = line[start:i]
+            spans.append((start + len(text) - len(text.lstrip()), start + len(text.rstrip())))
+            start = i + 1
+    return spans
 
 
 def _cell(values: list[str], i: int) -> str | None:
@@ -34,7 +48,7 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
     ast = AST()
 
     for uri, content in files:
-        rows, blank_rows = _parse_rows(content)
+        rows, blank_rows, lines = _parse_rows(content)
         if not rows:
             continue
 
@@ -104,22 +118,21 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
 
             if is_element_csv:
                 name = _cell(values, headers.index("element_name"))
-                # Any `element_id*` column holds a locator: `read_elements` collects
-                # them all, so a name with only an `Element_ID_xpath` is still defined.
-                value = next(
-                    (
-                        cell
-                        for i, header in enumerate(headers)
-                        if header.startswith("element_id")
-                        and (cell := _cell(values, i))
-                    ),
-                    None,
-                )
+                # Every `element_id*` column holds a locator, and `read_elements` keeps
+                # them all: a row can carry an xpath and a text fallback side by side.
+                spans = _spans(lines[row - 1] if row <= len(lines) else "")
+                locators = [
+                    Locator(cell, *(spans[i] if i < len(spans) else (0, 0)))
+                    for i, header in enumerate(headers)
+                    if header.startswith("element_id") and (cell := _cell(values, i))
+                ]
 
-                if name is None or value is None:
+                if name is None or not locators:
                     continue
 
-                ast.elements.append(Element(name=name, value=value, uri=uri, row=row))
+                ast.elements.append(
+                    Element(name=name, locators=locators, uri=uri, row=row)
+                )
 
             if is_error_csv:
                 code = _cell(values, headers.index("error_code")) or ""

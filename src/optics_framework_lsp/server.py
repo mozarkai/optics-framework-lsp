@@ -55,7 +55,9 @@ def apis(files: list[Path]) -> list[str]:
 
 def data_files(root: str | None, files: list[Path], ast: AST) -> list[str]:
     """What `Read Data` can read: a project-relative csv or json that is not ours."""
-    ours = {b.uri for b in [*ast.test_cases, *ast.modules]} | {e.uri for e in ast.elements}
+    ours = {b.uri for b in [*ast.test_cases, *ast.modules]} | {
+        e.uri for e in [*ast.elements, *ast.error_definitions]
+    }
     return sorted(
         str(path.relative_to(root))
         for path in files

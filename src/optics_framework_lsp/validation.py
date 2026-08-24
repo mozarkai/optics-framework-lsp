@@ -6,11 +6,12 @@ import re
 from collections import Counter, defaultdict
 from collections.abc import Iterator
 from functools import partial
+from operator import attrgetter
 
 from lsprotocol.types import Diagnostic, DiagnosticSeverity, Position, Range
 
 from .keyword_catalog import Catalog, slug
-from .parser.ast import AST
+from .parser.ast import AST, ErrorDefinition
 
 SOURCE = "optics"
 
@@ -83,8 +84,6 @@ def _duplicates(ast: AST) -> Iterator[_Finding]:
         [("test case", b.name, b.uri, b.start_row, None) for b in ast.test_cases]
         + [("module", b.name, b.uri, b.start_row, None) for b in ast.modules]
         + [("element", e.name, e.uri, e.row, e.value) for e in ast.elements]
-        # `read_error_definitions` keys its dict by code, so a repeat overwrites.
-        + [("error code", e.code, e.uri, e.row, None) for e in ast.error_definitions if e.code]
     ):
         seen[(kind, name, uri)].append((row, value))
 
@@ -106,6 +105,43 @@ def _duplicates(ast: AST) -> Iterator[_Finding]:
             yield _diag(
                 uri, row, DiagnosticSeverity.Warning, code, f"Duplicate {kind} {name!r}"
             )
+
+
+def _elsewhere(error: ErrorDefinition, rows: list[ErrorDefinition]) -> str:
+    """The other rows carrying the same value, named as a person would look them up."""
+    others: dict[str, list[int]] = defaultdict(list)
+    for other in rows:
+        if other is not error:
+            others[other.uri].append(other.row)
+
+    parts = []
+    # This file first, and named only when it is not this one.
+    for uri, lines in sorted(others.items(), key=lambda pair: pair[0] != error.uri):
+        listed = ", ".join(str(line) for line in lines)
+        where = f"line {listed}" if len(lines) == 1 else f"lines {listed}"
+        parts.append(where if uri == error.uri else f"{uri.rsplit('/', 1)[-1]} {where}")
+    return ", ".join(parts)
+
+
+def _duplicate_errors(ast: AST) -> Iterator[_Finding]:
+    """`_load_error_definitions` merges every file into one dict keyed by code, so unlike
+    elements these clash across files: a repeated code overwrites wherever it sits, and
+    two rows matching the same text both fire on it."""
+    for key, kind in ((attrgetter("code"), "error code"), (attrgetter("match"), "match string")):
+        seen: dict[str, list[ErrorDefinition]] = defaultdict(list)
+        for error in ast.error_definitions:
+            if value := key(error):
+                seen[value].append(error)
+
+        for value, rows in seen.items():
+            for error in rows if len(rows) > 1 else ():
+                yield _diag(
+                    error.uri,
+                    error.row,
+                    DiagnosticSeverity.Warning,
+                    f"duplicate-{kind.replace(' ', '-')}",
+                    f"Duplicate {kind} {value!r}, see {_elsewhere(error, rows)}",
+                )
 
 
 def _incomplete_errors(ast: AST) -> Iterator[_Finding]:
@@ -248,7 +284,14 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
 
 
 def validate(ast: AST, catalog: Catalog | None = None) -> dict[str, list[Diagnostic]]:
-    rules = [_hygiene, _duplicates, _unknown_modules, _unknown_elements, _incomplete_errors]
+    rules = [
+        _hygiene,
+        _duplicates,
+        _unknown_modules,
+        _unknown_elements,
+        _duplicate_errors,
+        _incomplete_errors,
+    ]
     if catalog is not None:
         rules.append(partial(_unknown_steps, catalog=catalog))
 

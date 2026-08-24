@@ -44,6 +44,7 @@ for module, class_name in CLASSES.items():
                     required += 1
         out[name.replace("_", " ").title()] = {
             "required": required, "variadic": variadic, "params": params,
+            "doc": inspect.getdoc(fn) or "",
         }
 
 print(json.dumps(out))
@@ -57,6 +58,8 @@ class Keyword:
     # Positional names in order. Python forbids a defaulted param before a plain one, so
     # the first `required` of these are the mandatory ones.
     params: list[str]
+    # The framework's own docstring, which is where the accepted values are written.
+    doc: str = ""
 
 
 Catalog = dict[str, Keyword]

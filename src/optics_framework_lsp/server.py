@@ -228,6 +228,20 @@ def completions(
     )
 
 
+@server.feature(types.TEXT_DOCUMENT_HOVER)
+def hover(ls: OpticsLanguageServer, params: types.HoverParams) -> types.Hover | None:
+    folder = ls.folder_of(params.text_document.uri)
+    if folder is None:
+        return None
+
+    # Only the catalog is needed here, so the workspace is not re-parsed.
+    return completion.hover(
+        ls.workspace.get_text_document(params.text_document.uri).source,
+        params.position,
+        ls._catalogs.get(folder),
+    )
+
+
 @server.feature(types.TEXT_DOCUMENT_DEFINITION)
 def definition(
     ls: OpticsLanguageServer, params: types.DefinitionParams

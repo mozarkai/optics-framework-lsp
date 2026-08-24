@@ -1,5 +1,5 @@
-# Completion, signature help and goto-definition. The column a cursor sits in decides
-# what belongs there.
+# Completion, signature help, goto-definition and hover. The column a cursor sits in
+# decides what belongs there.
 
 from __future__ import annotations
 
@@ -11,7 +11,10 @@ from typing import Literal
 from lsprotocol.types import (
     CompletionItem,
     CompletionItemKind,
+    Hover,
     Location,
+    MarkupContent,
+    MarkupKind,
     ParameterInformation,
     Position,
     Range,
@@ -298,3 +301,25 @@ def definition(
     # Condition writes an inverted module as `!Name`; the runner strips the same way.
     wanted = field.removeprefix("!")
     return [_at(m.uri, m.start_row) for m in ast.modules if m.name == wanted]
+
+
+def hover(text: str, position: Position, catalog: Catalog | None) -> Hover | None:
+    """A keyword's signature and the framework's own docstring for it."""
+    cursor = Cursor(text, position)
+    step = cursor.column_of("module_step")
+    if step is None or cursor.column != step:
+        return None
+
+    keyword = (catalog or {}).get(cursor.step_name(step))
+    if keyword is None:
+        return None
+
+    # Plain text, because the docstrings are reST: markdown would fold the `:param x:`
+    # lines into one paragraph.
+    label = f"{cursor.field(step)}({', '.join(keyword.params)})"
+    return Hover(
+        contents=MarkupContent(
+            kind=MarkupKind.PlainText,
+            value=f"{label}\n\n{keyword.doc}" if keyword.doc else label,
+        )
+    )

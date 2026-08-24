@@ -14,7 +14,7 @@ from .parser.ast import AST
 
 SOURCE = "optics"
 
-_VAR = re.compile(r"\$\{([^}]+)\}")
+VAR = re.compile(r"\$\{([^}]+)\}")
 
 # Keywords that bind a name instead of reading one, and which params hold the names.
 # Taken from the optics-framework source: most store under the name in their first
@@ -168,7 +168,7 @@ def _references(ast: AST) -> Iterator[tuple[str, int, str]]:
             params = step.params[1:] if declares else step.params
 
             for text in (step.step_name or "", *params):
-                for name in _VAR.findall(text):
+                for name in VAR.findall(text):
                     yield module.uri, step.row, name
 
 

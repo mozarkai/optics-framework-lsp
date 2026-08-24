@@ -228,6 +228,24 @@ def completions(
     )
 
 
+@server.feature(types.TEXT_DOCUMENT_DEFINITION)
+def definition(
+    ls: OpticsLanguageServer, params: types.DefinitionParams
+) -> list[types.Location]:
+    uri = params.text_document.uri
+    folder = ls.folder_of(uri)
+    if folder is None:
+        return []
+
+    ast = parse_csv_sources(ls.sources(ls.files(folder)))
+    return completion.definition(
+        ls.workspace.get_text_document(uri).source,
+        params.position,
+        ast,
+        ls._catalogs.get(folder),
+    )
+
+
 @server.feature(
     types.TEXT_DOCUMENT_SIGNATURE_HELP,
     types.SignatureHelpOptions(trigger_characters=[","], retrigger_characters=[","]),

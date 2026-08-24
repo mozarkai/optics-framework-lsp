@@ -1,4 +1,5 @@
-# Completion and signature help. The column a cursor sits in decides what belongs there.
+# Completion, signature help and goto-definition. The column a cursor sits in decides
+# what belongs there.
 
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ from typing import Literal
 from lsprotocol.types import (
     CompletionItem,
     CompletionItemKind,
+    Location,
     ParameterInformation,
     Position,
     Range,
@@ -20,7 +22,7 @@ from lsprotocol.types import (
 
 from .keyword_catalog import Catalog, slug
 from .parser.ast import AST
-from .validation import declared, undefined
+from .validation import VAR, declared, undefined
 
 
 ParamKind = Literal["module", "file", "api"]
@@ -81,8 +83,11 @@ class Cursor:
     def column_of(self, header: str) -> int | None:
         return self.headers.index(header) if header in self.headers else None
 
+    def field(self, column: int) -> str:
+        return self.fields[column] if column < len(self.fields) else ""
+
     def step_name(self, step: int) -> str:
-        return slug(self.fields[step]) if step < len(self.fields) else ""
+        return slug(self.field(step))
 
     def replacement(self, text: str) -> TextEdit:
         """Replace the whole field, so ${b} completes without nesting into ${${b}}."""
@@ -260,3 +265,36 @@ def signature(text: str, position: Position, catalog: Catalog | None) -> Signatu
         active_signature=0,
         active_parameter=min(cursor.column - step - 1, max(len(keyword.params) - 1, 0)),
     )
+
+
+def _at(uri: str, row: int) -> Location:
+    """A definition points at the start of its row, which is 1-based in the ast."""
+    at = Position(line=max(row - 1, 0), character=0)
+    return Location(uri=uri, range=Range(start=at, end=at))
+
+
+def definition(
+    text: str, position: Position, ast: AST, catalog: Catalog | None
+) -> list[Location]:
+    """Where the module a step runs, or the elements a param reads, are defined."""
+    cursor = Cursor(text, position)
+    step = cursor.column_of("module_step")
+    if cursor.column != cursor.column_of("test_step") and (
+        step is None or cursor.column < step
+    ):
+        return []
+
+    field = cursor.field(cursor.column)
+
+    # A step column resolves the keyword first, so a same-named module is not what runs.
+    if cursor.column == step and slug(field) in (catalog or {}):
+        return []
+
+    # A cell holds either ${names} to read or a bare name to run. Every ${name} in the
+    # cell is offered: a fallback element is several rows, and so is `${a} == ${b}`.
+    if names := set(VAR.findall(field)):
+        return [_at(e.uri, e.row) for e in ast.elements if e.name in names]
+
+    # Condition writes an inverted module as `!Name`; the runner strips the same way.
+    wanted = field.removeprefix("!")
+    return [_at(m.uri, m.start_row) for m in ast.modules if m.name == wanted]

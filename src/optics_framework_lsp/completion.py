@@ -40,7 +40,7 @@ ParamKind = Literal["module", "file", "api"]
 
 # What a param holds, by keyword and position after `module_step`. Anything unlisted
 # holds an element or variable.
-_PARAM_KINDS: dict[str, dict[int, ParamKind]] = {
+PARAM_KINDS: dict[str, dict[int, ParamKind]] = {
     "run loop": {0: "module"},
     "execute module": {0: "module"},
     "read data": {1: "file"},
@@ -50,7 +50,7 @@ _PARAM_KINDS: dict[str, dict[int, ParamKind]] = {
 # Values a param accepts, by param name. Documented in docstrings only, so the catalog
 # cannot supply them: `direction` is checked as `in ("up", "down")` by the appium driver,
 # and `rule` as `any(...) if rule == 'any' else all(...)`.
-_PARAM_VALUES = {
+PARAM_VALUES = {
     "direction": ["up", "down", "left", "right"],
     "rule": ["any", "all"],
     "element_state": ["visible", "invisible", "enabled", "disabled"],
@@ -190,7 +190,7 @@ def _params(
         modules = _modules(cursor, ast, "!" if cursor.partial.startswith("!") else "")
         return modules if param % 2 else modules + _variables(cursor, ast)
 
-    kind = _PARAM_KINDS.get(name, {}).get(param)
+    kind = PARAM_KINDS.get(name, {}).get(param)
     if kind == "module":
         # A module to run, not an element to find, and written bare.
         return _modules(cursor, ast)
@@ -204,7 +204,7 @@ def _params(
     # than by listing every keyword that happens to take a `direction`.
     keyword = (catalog or {}).get(name)
     names = keyword.params if keyword else []
-    if values := _PARAM_VALUES.get(names[param] if param < len(names) else ""):
+    if values := PARAM_VALUES.get(names[param] if param < len(names) else ""):
         return _listing(cursor, values, CompletionItemKind.EnumMember, "value")
 
     return _variables(cursor, ast)
@@ -376,7 +376,7 @@ def _symbol_at(cursor: Cursor, catalog: Catalog | None) -> tuple[str, str] | Non
     if names := VAR.findall(field):
         return "element", names[0]
 
-    kind = _PARAM_KINDS.get(cursor.step_name(step), {}).get(cursor.column - step - 1)
+    kind = PARAM_KINDS.get(cursor.step_name(step), {}).get(cursor.column - step - 1)
     if kind in ("file", "api"):
         return kind, field
     return "module", field.removeprefix("!")
@@ -437,7 +437,7 @@ def references(
             for m in ast.modules
             for step in m.steps
             for i, param in enumerate(p for p in step.params if p)
-            if _PARAM_KINDS.get(slug(step.step_name), {}).get(i) == kind and param == name
+            if PARAM_KINDS.get(slug(step.step_name), {}).get(i) == kind and param == name
         ]
 
     # Sorted, so a result reads top to bottom per file rather than by rule order.

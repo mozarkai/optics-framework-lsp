@@ -26,7 +26,7 @@ def _parse_rows(content: str) -> tuple[list[_Row], list[_Row], list[str]]:
     return rows, blank_rows, text.split("\n")
 
 
-def _spans(line: str) -> list[tuple[int, int]]:
+def spans(line: str) -> list[tuple[int, int]]:
     """Where each field's text sits in its line, quotes and padding trimmed off."""
     spans, quoted, start = [], False, 0
     # The added comma flushes the last field without needing a second pass.
@@ -126,9 +126,9 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
                 name = _cell(values, headers.index("element_name"))
                 # Every `element_id*` column holds a locator, and `read_elements` keeps
                 # them all: a row can carry an xpath and a text fallback side by side.
-                spans = _spans(lines[row - 1] if row <= len(lines) else "")
+                places = spans(lines[row - 1] if row <= len(lines) else "")
                 locators = [
-                    Locator(cell, *(spans[i] if i < len(spans) else (0, 0)))
+                    Locator(cell, *(places[i] if i < len(places) else (0, 0)))
                     for i, header in enumerate(headers)
                     if header.startswith("element_id") and (cell := _cell(values, i))
                 ]

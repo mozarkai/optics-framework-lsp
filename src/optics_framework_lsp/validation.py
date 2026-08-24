@@ -168,7 +168,13 @@ def _incomplete_errors(ast: AST) -> Iterator[_Finding]:
             )
 
 
-def _module_args(step_name: str | None, count: int) -> set[int]:
+def declares_at(step_name: str | None, count: int) -> set[int]:
+    """Which params of a step bind a name rather than read one."""
+    where = _DECLARES.get(slug(step_name))
+    return set(range(*where.indices(count))) if where else set()
+
+
+def module_args(step_name: str | None, count: int) -> set[int]:
     """Which params of a step name a module to run, given how many it was given."""
     name = slug(step_name)
     if name in ("run loop", "execute module"):
@@ -190,7 +196,7 @@ def module_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
         for step in module.steps:
             # Blank cells are dropped by `read_modules`, so they do not hold a place.
             params = [p for p in step.params if p]
-            for i in _module_args(step.step_name, len(params)):
+            for i in module_args(step.step_name, len(params)):
                 yield module.uri, step.row, params[i]
 
 
@@ -205,7 +211,7 @@ def module_conditions(ast: AST) -> Iterator[tuple[str, int, str]]:
 
             # Whatever is not a target is a condition, the bare else-target included.
             params = [p for p in step.params if p]
-            targets = _module_args(step.step_name, len(params))
+            targets = module_args(step.step_name, len(params))
             for i, param in enumerate(params):
                 if i not in targets:
                     yield module.uri, step.row, param.removeprefix("!").strip()

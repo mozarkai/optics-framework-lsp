@@ -14,6 +14,7 @@ from . import completion, keyword_catalog
 from .parser.ast import AST
 from .parser.csv_parser import parse_csv_sources
 from .symbols import symbols
+from .tokens import LEGEND, MODIFIERS, tokens
 from .validation import validate
 
 
@@ -73,6 +74,13 @@ class OpticsLanguageServer(LanguageServer):
         # The install each catalog was read from, so `pip install` is picked up.
         self._probed: dict[str, tuple[str, float] | None] = {}
 
+    def refreshes_tokens(self) -> bool:
+        """Whether the client asked to be told when tokens go stale. `getattr` because
+        there are no capabilities before initialize, which is how a test drives us."""
+        capabilities = getattr(self, "client_capabilities", None)
+        workspace = getattr(capabilities, "workspace", None)
+        return bool(getattr(workspace, "semantic_tokens", None))
+
     def folder_of(self, uri: str) -> str | None:
         return next((f for f in self.workspace.folders if uri.startswith(f)), None)
 
@@ -116,6 +124,12 @@ class OpticsLanguageServer(LanguageServer):
         # Recorded before the await, so keystrokes during a probe do not stack.
         self._probed[folder_uri] = marker
         self._catalogs[folder_uri] = await keyword_catalog.load(Path(root))
+
+        # Semantic tokens are pulled once and cached until the buffer changes, so a
+        # catalog arriving after the first pull needs a nudge, or every keyword stays
+        # coloured as a module.
+        if self._catalogs[folder_uri] and self.refreshes_tokens():
+            self.workspace_semantic_tokens_refresh(None)
 
     def validate_folder(self, folder_uri: str) -> None:
         found = validate(
@@ -227,6 +241,24 @@ def completions(
         data_files=data_files(to_fs_path(folder), files, ast),
         apis=apis(files),
     )
+
+
+@server.feature(
+    types.TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,
+    types.SemanticTokensLegend(token_types=LEGEND, token_modifiers=MODIFIERS),
+)
+def semantic_tokens(
+    ls: OpticsLanguageServer, params: types.SemanticTokensParams
+) -> types.SemanticTokens:
+    uri = params.text_document.uri
+    folder = ls.folder_of(uri)
+    if folder is None:
+        return types.SemanticTokens(data=[])
+
+    # Which names are modules is a whole-project question, as it is for references.
+    source = ls.workspace.get_text_document(uri).source
+    ast = parse_csv_sources(ls.sources(ls.files(folder)))
+    return types.SemanticTokens(data=tokens(source, ast, ls._catalogs.get(folder)))
 
 
 @server.feature(types.TEXT_DOCUMENT_DOCUMENT_SYMBOL)

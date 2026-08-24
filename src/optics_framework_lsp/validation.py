@@ -77,9 +77,11 @@ def _hygiene(ast: AST) -> Iterator[_Finding]:
 
 
 def _duplicates(ast: AST) -> Iterator[_Finding]:
-    # Same name in two files is how platform variants (ard/ios) coexist, so only a
-    # single file redefining a name is a problem.
-    seen: dict[tuple[str, str, str], list[tuple[int, str | None]]] = defaultdict(list)
+    # A second module or test case of the same name overwrites the first, wherever the
+    # files sit: `add_module_definition` assigns and `merge_dicts` keeps the later one.
+    # Elements instead merge into one list, which is how platform variants coexist, so
+    # for those only a single file repeating a row is a problem.
+    seen: dict[tuple[str, str, str], list[tuple[str, int, tuple | None]]] = defaultdict(list)
     for kind, name, uri, row, value in (
         [("test case", b.name, b.uri, b.start_row, None) for b in ast.test_cases]
         + [("module", b.name, b.uri, b.start_row, None) for b in ast.modules]
@@ -88,41 +90,45 @@ def _duplicates(ast: AST) -> Iterator[_Finding]:
             for e in ast.elements
         ]
     ):
-        seen[(kind, name, uri)].append((row, value))
+        seen[(kind, name, uri if kind == "element" else "")].append((uri, row, value))
 
-    for (kind, name, uri), entries in seen.items():
+    for (kind, name, _), entries in seen.items():
         if kind == "element":
             # Repeating a name with different ids is how fallback locators are written:
             # `read_elements` gathers them into one list. Repeating the whole row is only
             # untidy: it runs the same, but a failed lookup retries those ids twice.
-            repeated = Counter(value for _, value in entries)
-            rows = [row for row, value in entries if repeated[value] > 1]
+            repeated = Counter(value for _, _, value in entries)
+            rows = [(u, r) for u, r, value in entries if repeated[value] > 1]
         else:
-            rows = [row for row, _ in entries]
+            rows = [(u, r) for u, r, _ in entries]
 
         if len(rows) < 2:
             continue
 
         code = f"duplicate-{kind.replace(' ', '-')}"
-        for row in rows:
+        for uri, row in rows:
             yield _diag(
-                uri, row, DiagnosticSeverity.Warning, code, f"Duplicate {kind} {name!r}"
+                uri,
+                row,
+                DiagnosticSeverity.Warning,
+                code,
+                f"Duplicate {kind} {name!r}, see {_elsewhere(uri, row, rows)}",
             )
 
 
-def _elsewhere(error: ErrorDefinition, rows: list[ErrorDefinition]) -> str:
+def _elsewhere(uri: str, row: int, rows: list[tuple[str, int]]) -> str:
     """The other rows carrying the same value, named as a person would look them up."""
     others: dict[str, list[int]] = defaultdict(list)
-    for other in rows:
-        if other is not error:
-            others[other.uri].append(other.row)
+    for other_uri, other_row in rows:
+        if (other_uri, other_row) != (uri, row):
+            others[other_uri].append(other_row)
 
     parts = []
     # This file first, and named only when it is not this one.
-    for uri, lines in sorted(others.items(), key=lambda pair: pair[0] != error.uri):
+    for other, lines in sorted(others.items(), key=lambda pair: pair[0] != uri):
         listed = ", ".join(str(line) for line in lines)
         where = f"line {listed}" if len(lines) == 1 else f"lines {listed}"
-        parts.append(where if uri == error.uri else f"{uri.rsplit('/', 1)[-1]} {where}")
+        parts.append(where if other == uri else f"{other.rsplit('/', 1)[-1]} {where}")
     return ", ".join(parts)
 
 
@@ -137,13 +143,14 @@ def _duplicate_errors(ast: AST) -> Iterator[_Finding]:
                 seen[value].append(error)
 
         for value, rows in seen.items():
+            pairs = [(e.uri, e.row) for e in rows]
             for error in rows if len(rows) > 1 else ():
                 yield _diag(
                     error.uri,
                     error.row,
                     DiagnosticSeverity.Warning,
                     f"duplicate-{kind.replace(' ', '-')}",
-                    f"Duplicate {kind} {value!r}, see {_elsewhere(error, rows)}",
+                    f"Duplicate {kind} {value!r}, see {_elsewhere(error.uri, error.row, pairs)}",
                 )
 
 

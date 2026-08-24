@@ -73,8 +73,12 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
                     CsvIssue(uri=uri, row=row, kind="whitespace-only-line")
                 )
 
+        # Rows sharing a name are one block wherever they sit: `read_test_cases` and
+        # `read_modules` key by name, so rows split by another block still merge.
         current_test_case: Block | None = None
         current_module: Block | None = None
+        test_cases: dict[str, Block] = {}
+        modules: dict[str, Block] = {}
 
         for cells, row in body:
             values = [v.strip() for v in cells]
@@ -95,9 +99,10 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
                 step = _cell(values, headers.index("test_step"))
 
                 # An unnamed row continues the block above it.
-                if name and (current_test_case is None or current_test_case.name != name):
-                    current_test_case = Block(name=name, uri=uri, start_row=row)
-                    ast.test_cases.append(current_test_case)
+                if name and name not in test_cases:
+                    test_cases[name] = Block(name=name, uri=uri, start_row=row)
+                    ast.test_cases.append(test_cases[name])
+                current_test_case = test_cases.get(name, current_test_case)
 
                 if current_test_case is not None:
                     current_test_case.steps.append(Step(step_name=step, row=row))
@@ -107,9 +112,10 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
                 name = _cell(values, headers.index("module_name"))
                 step_name = _cell(values, step_index)
 
-                if name and (current_module is None or current_module.name != name):
-                    current_module = Block(name=name, uri=uri, start_row=row)
-                    ast.modules.append(current_module)
+                if name and name not in modules:
+                    modules[name] = Block(name=name, uri=uri, start_row=row)
+                    ast.modules.append(modules[name])
+                current_module = modules.get(name, current_module)
 
                 if current_module is not None:
                     current_module.steps.append(

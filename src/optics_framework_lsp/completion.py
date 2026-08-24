@@ -61,6 +61,18 @@ _LIFECYCLE = {
 }
 
 
+# The header decides what a csv is. These are the four `_identify_csv_content` accepts,
+# written as the framework reads them back: `read_elements` looks up `Element_Name` with
+# the case intact, while the other three readers lowercase theirs. Five params is what
+# 5 of 7 real projects write.
+_HEADERS = {
+    "test_case,test_step": "test cases",
+    "module_name,module_step,param_1,param_2,param_3,param_4,param_5": "modules",
+    "Element_Name,Element_ID": "elements",
+    "error_code,match_string,description,severity": "error definitions",
+}
+
+
 class Cursor:
     """Where a position falls in a csv: its header row, column, and partial field."""
 
@@ -198,6 +210,12 @@ def complete(
     apis: Sequence[str] = (),
 ) -> list[CompletionItem]:
     cursor = Cursor(text, position)
+
+    # Nothing is defined yet, so the row being typed is the header that decides the kind.
+    if cursor.column == 0 and len([row for row in text.splitlines() if row.strip()]) <= 1:
+        kind = CompletionItemKind.Struct
+        return [_item(cursor, h, kind, detail, h) for h, detail in _HEADERS.items()]
+
     step = cursor.column_of("module_step")
 
     if step is not None and cursor.column == step:

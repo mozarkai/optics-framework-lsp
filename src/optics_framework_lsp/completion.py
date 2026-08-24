@@ -68,6 +68,7 @@ class Cursor:
         lines = text.splitlines()
         line = lines[position.line] if position.line < len(lines) else ""
         prefix = line[: position.character]
+        self.paired = line[position.character :].startswith("}")
 
         self.header_line, header = next(
             ((i, row) for i, row in enumerate(lines) if row.strip()), (0, "")
@@ -94,10 +95,12 @@ class Cursor:
 
     def replacement(self, text: str) -> TextEdit:
         """Replace the whole field, so ${b} completes without nesting into ${${b}}."""
+        # An editor that auto-pairs braces leaves `${|}`, and the item brings its own.
+        end = self.start + len(self.partial) + (self.paired and text.endswith("}"))
         return TextEdit(
             range=Range(
                 start=Position(line=self.line, character=self.start),
-                end=Position(line=self.line, character=self.start + len(self.partial)),
+                end=Position(line=self.line, character=end),
             ),
             new_text=text,
         )

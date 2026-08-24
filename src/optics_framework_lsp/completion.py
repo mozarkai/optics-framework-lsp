@@ -23,7 +23,7 @@ from lsprotocol.types import (
     TextEdit,
 )
 
-from .keyword_catalog import Catalog, slug
+from .keyword_catalog import Catalog, Keyword, slug
 from .parser.ast import AST
 from .validation import VAR, declared, undefined
 
@@ -246,6 +246,14 @@ def complete(
     return []
 
 
+def _rendered(keyword: Keyword) -> list[str]:
+    """Params as `name='default'`, so what an omitted cell falls back to is visible."""
+    return [
+        f"{name}={keyword.defaults[name]}" if name in keyword.defaults else name
+        for name in keyword.params
+    ]
+
+
 def signature(text: str, position: Position, catalog: Catalog | None) -> SignatureHelp | None:
     """The keyword's params, with the column the cursor is in marked active."""
     cursor = Cursor(text, position)
@@ -258,11 +266,14 @@ def signature(text: str, position: Position, catalog: Catalog | None) -> Signatu
     if keyword is None:
         return None
 
+    # A parameter label must be a substring of the signature for a client to highlight
+    # it, so both are built from the same rendering.
+    params = _rendered(keyword)
     return SignatureHelp(
         signatures=[
             SignatureInformation(
-                label=f"{name.title()}({', '.join(keyword.params)})",
-                parameters=[ParameterInformation(label=p) for p in keyword.params],
+                label=f"{name.title()}({', '.join(params)})",
+                parameters=[ParameterInformation(label=p) for p in params],
             )
         ],
         active_signature=0,
@@ -316,7 +327,7 @@ def hover(text: str, position: Position, catalog: Catalog | None) -> Hover | Non
 
     # Plain text, because the docstrings are reST: markdown would fold the `:param x:`
     # lines into one paragraph.
-    label = f"{cursor.field(step)}({', '.join(keyword.params)})"
+    label = f"{cursor.field(step)}({', '.join(_rendered(keyword))})"
     return Hover(
         contents=MarkupContent(
             kind=MarkupKind.PlainText,

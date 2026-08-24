@@ -7,7 +7,7 @@ import json
 import os
 import sys
 import sysconfig
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # Runs in the project's interpreter, which does not have this package installed, so the
@@ -32,6 +32,7 @@ for module, class_name in CLASSES.items():
         required = 0
         variadic = False
         params = []
+        defaults = {}
         for param_name, p in inspect.signature(fn).parameters.items():
             if param_name == "self":
                 continue
@@ -42,9 +43,11 @@ for module, class_name in CLASSES.items():
                 params.append(param_name)
                 if p.default is p.empty:
                     required += 1
+                else:
+                    defaults[param_name] = repr(p.default)
         out[name.replace("_", " ").title()] = {
             "required": required, "variadic": variadic, "params": params,
-            "doc": inspect.getdoc(fn) or "",
+            "doc": inspect.getdoc(fn) or "", "defaults": defaults,
         }
 
 print(json.dumps(out))
@@ -60,6 +63,8 @@ class Keyword:
     params: list[str]
     # The framework's own docstring, which is where the accepted values are written.
     doc: str = ""
+    # What an omitted param falls back to, already repr'd, by param name.
+    defaults: dict[str, str] = field(default_factory=dict)
 
 
 Catalog = dict[str, Keyword]

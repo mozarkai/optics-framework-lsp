@@ -1,7 +1,8 @@
 from lsprotocol.types import DiagnosticSeverity
 
+from optics_framework_lsp.keyword_catalog import CATALOG
 from optics_framework_lsp.parser.csv_parser import parse_csv_sources
-from optics_framework_lsp.validation import validate
+from optics_framework_lsp.validation import element_refs, validate
 
 TESTS = "file:///w/tests.csv"
 MODULES = "file:///w/modules.csv"
@@ -292,3 +293,53 @@ def test_only_a_short_row_is_upgraded_by_the_file_kind():
         ("csv-whitespace-line", DiagnosticSeverity.Warning, "Whitespace-only line"),
         ("csv-too-many-columns", DiagnosticSeverity.Warning, "Row has more columns than the header"),
     ]
+
+
+def test_an_embedded_ref_counts_only_where_the_keyword_substitutes_it():
+    """`resolve_param` resolves a param only when the whole cell is one `${name}`. Three
+    keywords re-scan their own param and raise E0702 on a missing name; elsewhere the
+    keyword is handed the text verbatim, braces and all."""
+    found = _check(**{
+        MODULES:
+            "module_name,module_step,param_1,param_2,param_3\n"
+            # Whole-cell: always a reference, whatever the keyword.
+            "M,Press Element,${whole}\n"
+            # Embedded in a plain param: literal text the keyword receives as-is.
+            "M,Enter Text,${known},hello ${embedded_plain}\n"
+            # Read Data's query, Evaluate's expression, Condition's condition: substituted.
+            "M,Read Data,out,f.csv,age == ${embedded_query}\n"
+            "M,Evaluate,total,${embedded_expr} + 1\n"
+            "M,Condition,${embedded_cond} > 1,Target\n",
+        ELEMENTS: "element_name,element_id\nknown,//a\nTarget,//b\n",
+    })
+    missing = {d.message.split("'")[1] for d in found[MODULES] if d.code == "element-not-found"}
+    assert missing == {"whole", "embedded_query", "embedded_expr", "embedded_cond"}
+    assert "embedded_plain" not in missing
+
+
+def test_a_ref_in_the_step_name_cell_is_a_missing_keyword_not_a_missing_element():
+    """The runner looks that cell up in keyword_map, so `${x}` there never resolves as an
+    element. Real suites hold pasted Robot Framework lines in this column."""
+    found = validate(
+        parse_csv_sources([
+            (MODULES, "module_name,module_step,param_1\nM,${letter}  Set Variable  ${other},\n"),
+        ]),
+        CATALOG,
+    )
+    assert [d.code for d in found[MODULES]] == ["keyword-not-found"]
+
+
+def test_element_refs_yields_only_the_cells_the_runner_resolves():
+    """A bound param is a declaration, not a reference; a Condition target is a module name
+    `execute_module` looks up literally, not an expression `_resolve_condition` scans."""
+    def refs(body):
+        return sorted(n for _, _, n in element_refs(parse_csv_sources([(MODULES, body)])))
+
+    assert refs(
+        "module_name,module_step,param_1,param_2,param_3\n"
+        "M,Read Data,${out},f.csv,age == ${q}\n"
+    ) == ["q"]
+    assert refs(
+        "module_name,module_step,param_1,param_2\n"
+        "M,Condition,${cond} > 1,Do ${notaref}\n"
+    ) == ["cond"]

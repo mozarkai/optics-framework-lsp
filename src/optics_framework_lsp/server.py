@@ -17,7 +17,7 @@ from .parser.csv_parser import parse_csv_sources
 from . import rename as renaming
 from .symbols import symbols
 from .tokens import LEGEND, MODIFIERS, tokens
-from .validation import validate
+from .validation import Finding, SOURCE, validate
 
 
 # What `_load_file_data` can parse.
@@ -63,6 +63,20 @@ def data_files(root: str | None, files: list[Path], ast: AST) -> list[str]:
         str(path.relative_to(root))
         for path in files
         if root and path.suffix.lower() in _DATA and path.as_uri() not in ours
+    )
+
+
+def _diagnostic(finding: Finding) -> types.Diagnostic:
+    """A `Finding` on the wire. The engine stays protocol-free; the range is built here."""
+    return types.Diagnostic(
+        range=types.Range(
+            start=types.Position(line=finding.line, character=0),
+            end=types.Position(line=finding.line + 1, character=0),
+        ),
+        message=finding.message,
+        severity=types.DiagnosticSeverity(finding.severity),
+        code=finding.code,
+        source=SOURCE,
     )
 
 
@@ -114,9 +128,11 @@ class OpticsLanguageServer(LanguageServer):
                 types.PublishDiagnosticsParams(uri=uri, diagnostics=[])
             )
 
-        for uri, diagnostics in found.items():
+        for uri, findings in found.items():
             self.text_document_publish_diagnostics(
-                types.PublishDiagnosticsParams(uri=uri, diagnostics=diagnostics)
+                types.PublishDiagnosticsParams(
+                    uri=uri, diagnostics=[_diagnostic(f) for f in findings]
+                )
             )
 
         self._published[folder_uri] = set(found)

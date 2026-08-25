@@ -1,19 +1,43 @@
-# Rules turn an AST into LSP diagnostics, keyed by uri
+# Rules turn an AST into findings, keyed by uri.
+#
+# Deliberately protocol-free: a `Finding` is a plain dataclass, not an
+# `lsprotocol.Diagnostic`. Importing `lsprotocol.types` costs ~290ms, which a long-lived
+# server pays once but a per-call CLI would pay every time. Each transport converts.
 
 from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
 from collections.abc import Iterator
+from dataclasses import dataclass
 from functools import partial
 from operator import attrgetter
-
-from lsprotocol.types import Diagnostic, DiagnosticSeverity, Position, Range
 
 from .keyword_catalog import Catalog, slug
 from .parser.ast import AST, ErrorDefinition
 
 SOURCE = "optics"
+
+# The two `DiagnosticSeverity` values we ever emit. Ints, and `DiagnosticSeverity` is an
+# int-based enum, so a transport can hand these straight to lsprotocol.
+ERROR = 1
+WARNING = 2
+
+
+@dataclass(slots=True)
+class Finding:
+    """One problem with one row. `row` is 1-based, as the framework counts rows."""
+
+    severity: int
+    code: str
+    message: str
+    row: int
+
+    @property
+    def line(self) -> int:
+        """The 0-based line a client wants. The only definition of this conversion."""
+        return max(self.row - 1, 0)
+
 
 VAR = re.compile(r"\$\{([^}]+)\}")
 
@@ -35,48 +59,36 @@ def _bare(name: str) -> str:
 
 _CSV_ISSUES = {
     "whitespace-only-line": (
-        DiagnosticSeverity.Warning,
+        WARNING,
         "csv-whitespace-line",
         "Whitespace-only line",
     ),
     "too-few-columns": (
-        DiagnosticSeverity.Error,
+        ERROR,
         "csv-too-few-columns",
         "Row has fewer than 2 columns",
     ),
     "too-many-columns": (
-        DiagnosticSeverity.Warning,
+        WARNING,
         "csv-too-many-columns",
         "Row has more columns than the header",
     ),
 }
 
-_Finding = tuple[str, Diagnostic]
+_Keyed = tuple[str, Finding]
 
 
-def _diag(
-    uri: str, row: int, severity: DiagnosticSeverity, code: str, message: str
-) -> _Finding:
-    line = max(row - 1, 0)
-    return uri, Diagnostic(
-        range=Range(
-            start=Position(line=line, character=0),
-            end=Position(line=line + 1, character=0),
-        ),
-        message=message,
-        severity=severity,
-        code=code,
-        source=SOURCE,
-    )
+def _diag(uri: str, row: int, severity: int, code: str, message: str) -> _Keyed:
+    return uri, Finding(severity=severity, code=code, message=message, row=row)
 
 
-def _hygiene(ast: AST) -> Iterator[_Finding]:
+def _hygiene(ast: AST) -> Iterator[_Keyed]:
     for issue in ast.csv_issues:
         severity, code, message = _CSV_ISSUES[issue.kind]
         yield _diag(issue.uri, issue.row, severity, code, message)
 
 
-def _duplicates(ast: AST) -> Iterator[_Finding]:
+def _duplicates(ast: AST) -> Iterator[_Keyed]:
     # A second module or test case of the same name overwrites the first, wherever the
     # files sit: `add_module_definition` assigns and `merge_dicts` keeps the later one.
     # Elements instead merge into one list, which is how platform variants coexist, so
@@ -110,7 +122,7 @@ def _duplicates(ast: AST) -> Iterator[_Finding]:
             yield _diag(
                 uri,
                 row,
-                DiagnosticSeverity.Warning,
+                WARNING,
                 code,
                 f"Duplicate {kind} {name!r}, see {_elsewhere(uri, row, rows)}",
             )
@@ -132,7 +144,7 @@ def _elsewhere(uri: str, row: int, rows: list[tuple[str, int]]) -> str:
     return ", ".join(parts)
 
 
-def _duplicate_errors(ast: AST) -> Iterator[_Finding]:
+def _duplicate_errors(ast: AST) -> Iterator[_Keyed]:
     """`_load_error_definitions` merges every file into one dict keyed by code, so unlike
     elements these clash across files: a repeated code overwrites wherever it sits, and
     two rows matching the same text both fire on it."""
@@ -148,13 +160,13 @@ def _duplicate_errors(ast: AST) -> Iterator[_Finding]:
                 yield _diag(
                     error.uri,
                     error.row,
-                    DiagnosticSeverity.Warning,
+                    WARNING,
                     f"duplicate-{kind.replace(' ', '-')}",
                     f"Duplicate {kind} {value!r}, see {_elsewhere(error.uri, error.row, pairs)}",
                 )
 
 
-def _incomplete_errors(ast: AST) -> Iterator[_Finding]:
+def _incomplete_errors(ast: AST) -> Iterator[_Keyed]:
     """A row needs both columns; `read_error_definitions` silently drops it otherwise."""
     for error in ast.error_definitions:
         if not (error.code and error.match):
@@ -162,7 +174,7 @@ def _incomplete_errors(ast: AST) -> Iterator[_Finding]:
             yield _diag(
                 error.uri,
                 error.row,
-                DiagnosticSeverity.Warning,
+                WARNING,
                 "error-definition-incomplete",
                 f"Row has no {missing}, so it never matches",
             )
@@ -214,7 +226,7 @@ def module_conditions(ast: AST) -> Iterator[tuple[str, int, str]]:
                     yield module.uri, step.row, param.removeprefix("!").strip()
 
 
-def _unknown_modules(ast: AST) -> Iterator[_Finding]:
+def _unknown_modules(ast: AST) -> Iterator[_Keyed]:
     # A ${name} is reported like any other: nothing substitutes it first. The runner
     # hands params to the keyword untouched, and `execute_module` indexes the dict raw.
     known = {b.name for b in ast.modules}
@@ -224,7 +236,7 @@ def _unknown_modules(ast: AST) -> Iterator[_Finding]:
             yield _diag(
                 uri,
                 row,
-                DiagnosticSeverity.Error,
+                ERROR,
                 "module-not-found",
                 f"Module {name!r} not found",
             )
@@ -265,7 +277,7 @@ def undefined(ast: AST) -> set[str]:
     return {name for _, _, name in element_refs(ast) if name not in known}
 
 
-def _unknown_elements(ast: AST) -> Iterator[_Finding]:
+def _unknown_elements(ast: AST) -> Iterator[_Keyed]:
     known = {e.name for e in ast.elements} | declared(ast)
 
     for uri, row, name in element_refs(ast):
@@ -273,13 +285,13 @@ def _unknown_elements(ast: AST) -> Iterator[_Finding]:
             yield _diag(
                 uri,
                 row,
-                DiagnosticSeverity.Error,
+                ERROR,
                 "element-not-found",
                 f"{name!r} is not a defined element or variable",
             )
 
 
-def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
+def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Keyed]:
     # Raw names: `get_module_definition` is a plain dict lookup, so case matters.
     modules = {m.name for m in ast.modules}
 
@@ -298,7 +310,7 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
                 yield _diag(
                     module.uri,
                     step.row,
-                    DiagnosticSeverity.Error,
+                    ERROR,
                     "keyword-not-found",
                     f"{step.step_name!r} is not a keyword or module",
                 )
@@ -311,13 +323,13 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
                 yield _diag(
                     module.uri,
                     step.row,
-                    DiagnosticSeverity.Error,
+                    ERROR,
                     "keyword-arity",
                     f"{step.step_name!r} takes {wanted} params, got {given}",
                 )
 
 
-def validate(ast: AST, catalog: Catalog | None = None) -> dict[str, list[Diagnostic]]:
+def validate(ast: AST, catalog: Catalog | None = None) -> dict[str, list[Finding]]:
     rules = [
         _hygiene,
         _duplicates,
@@ -329,7 +341,7 @@ def validate(ast: AST, catalog: Catalog | None = None) -> dict[str, list[Diagnos
     if catalog is not None:
         rules.append(partial(_unknown_steps, catalog=catalog))
 
-    found: dict[str, list[Diagnostic]] = defaultdict(list)
+    found: dict[str, list[Finding]] = defaultdict(list)
     for rule in rules:
         for uri, diagnostic in rule(ast):
             found[uri].append(diagnostic)

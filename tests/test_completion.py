@@ -254,3 +254,164 @@ def test_the_header_row_itself_is_never_widened():
         CATALOG,
     )
     assert all(i.additional_text_edits is None for i in items)
+
+
+M_URI, T_URI, E_URI = "file:///w/m.csv", "file:///w/t.csv", "file:///w/e.csv"
+
+M_SRC = (
+    "module_name,module_step,param_1,param_2\n"
+    "Login,Press Element,${btn}\n"
+    "Login,Execute Module,Helper\n"
+    "Helper,Sleep,1\n"
+    "Guard,Condition,!Helper,Login\n"
+    "Guard,Helper\n"
+)
+T_SRC = "test_case,test_step\nTC,Login\n"
+E_SRC = "element_name,element_id\nbtn,//a\nbtn,btn.png\n"
+
+
+def _definition(text, line, character, catalog=None, modules=M_SRC):
+    from optics_framework_lsp.completion import definition
+
+    sources = [(M_URI, modules), (T_URI, T_SRC), (E_URI, E_SRC)]
+    ast = parse_csv_sources(sources)
+    return definition(text, Position(line=line, character=character), ast, catalog)
+
+
+def test_a_test_step_goes_to_its_module():
+    (found,) = _definition(T_SRC, 1, 5)
+    assert (found.uri, found.range.start.line) == (M_URI, 1)
+
+
+def test_a_module_param_goes_to_the_nested_module():
+    (found,) = _definition(M_SRC, 2, 25)
+    assert (found.uri, found.range.start.line) == (M_URI, 3)
+
+
+def test_a_variable_goes_to_every_row_that_defines_it():
+    # Both rows are locators for `btn`, and the runner tries each in turn.
+    found = _definition(M_SRC, 1, 25)
+    assert [(f.uri, f.range.start.line) for f in found] == [(E_URI, 1), (E_URI, 2)]
+
+
+def test_a_nested_module_step_finds_its_definition():
+    # A step names a keyword or, failing that, another module to run.
+    (found,) = _definition(M_SRC, 5, 8)
+    assert (found.uri, found.range.start.line) == (M_URI, 3)
+
+
+def test_a_keyword_wins_over_a_module_of_the_same_name():
+    # `_execute_single_keyword` tries the keyword map first, so `Sleep` is not the module.
+    named = M_SRC + "Sleep,Sleep\n"
+    assert _definition(named, 6, 8, {"sleep": None}, named) == []
+    assert len(_definition(named, 6, 8, None, named)) == 1
+
+
+def test_an_inverted_condition_still_finds_its_module():
+    (found,) = _definition(M_SRC, 4, 20)
+    assert (found.uri, found.range.start.line) == (M_URI, 3)
+
+
+def test_a_keyword_has_nowhere_to_go():
+    assert _definition(M_SRC, 1, 15) == []
+
+
+def test_the_header_is_not_a_reference():
+    # Column 1 of the header is `module_step`, which is in a step column but names nothing.
+    assert _definition(M_SRC, 0, 15) == []
+
+
+DOCS = {
+    "press element": Keyword(
+        required=1,
+        variadic=False,
+        params=["element", "repeat"],
+        doc="Press a specified element.\n\n:param element: What to press.",
+        defaults={"repeat": "'1'"},
+    ),
+    "sleep": Keyword(required=1, variadic=False, params=["seconds"]),
+}
+
+
+def _hover(line, character, catalog=DOCS):
+    from optics_framework_lsp.completion import hover
+
+    return hover(M_SRC, Position(line=line, character=character), catalog)
+
+
+def test_hover_shows_the_signature_and_docstring():
+    found = _hover(1, 15)
+    # Plain text, or markdown would fold the `:param x:` lines into one paragraph.
+    assert found.contents.kind == MarkupKind.PlainText
+    # An omitted cell falls back to the default, which is nowhere in the csv.
+    assert found.contents.value.startswith("Press Element(element, repeat='1')\n\n")
+    assert ":param element: What to press." in found.contents.value
+
+
+def test_hover_without_a_docstring_is_just_the_signature():
+    assert _hover(3, 10).contents.value == "Sleep(seconds)"
+
+
+def test_hover_needs_the_catalog():
+    assert _hover(1, 15, None) is None
+
+
+def test_hover_only_answers_in_the_step_column():
+    # Column 2 holds ${btn}, not a keyword.
+    assert _hover(1, 24) is None
+
+
+def _accept(rows: str, line: int, character: int, label: str) -> str:
+    """The chosen item's edit applied to its row, as an editor would apply it."""
+    ast = parse_csv_sources([("file:///w/m.csv", rows), ("file:///w/e.csv", ELEMENTS)])
+    (item,) = [
+        i
+        for i in complete(rows, Position(line=line, character=character), ast, CATALOG)
+        if i.label == label
+    ]
+    row, edit = rows.splitlines()[line], item.text_edit
+    return row[: edit.range.start.character] + edit.new_text + row[edit.range.end.character :]
+
+
+PAIRED = "module_name,module_step,param_1\nLogin,Press Element,${}\n"
+
+
+def test_an_auto_paired_brace_is_not_doubled():
+    # The editor closes the brace as `${|}`, and the item carries its own.
+    where = len("Login,Press Element,${")
+    assert _accept(PAIRED, 1, where, "btn") == "Login,Press Element,${btn}"
+
+
+def test_a_partly_typed_name_inside_a_pair_is_replaced_whole():
+    rows = "module_name,module_step,param_1\nLogin,Press Element,${bt}\n"
+    assert _accept(rows, 1, len("Login,Press Element,${bt"), "btn") == "Login,Press Element,${btn}"
+
+
+def test_without_a_pair_nothing_extra_is_eaten():
+    rows = "module_name,module_step,param_1\nLogin,Press Element,${\n"
+    assert _accept(rows, 1, len("Login,Press Element,${"), "btn") == "Login,Press Element,${btn}"
+
+
+def test_a_brace_further_along_the_row_is_left_alone():
+    rows = "module_name,module_step,param_1,param_2\nLogin,Press Element,${,x}\n"
+    assert _accept(rows, 1, len("Login,Press Element,${"), "btn") == "Login,Press Element,${btn},x}"
+
+
+def test_a_bare_name_never_eats_a_following_brace():
+    # Only ${...} items bring their own closing brace; a module name does not.
+    rows = "module_name,module_step,param_1\nLogin,Sleep,1\nOther,Execute Module,}\n"
+    where = len("Other,Execute Module,")
+    assert _accept(rows, 2, where, "Login") == "Other,Execute Module,Login}"
+
+
+def test_images_are_offered_in_any_element_id_column():
+    # `read_elements` reads every `element_id*` column, so completion must too.
+    header = "Element_Name,Element_ID_xpath,Element_ID\n"
+    items = complete(
+        header + "btn,//a,",
+        Position(line=1, character=len("btn,//a,")),
+        parse_csv_sources([("file:///w/e.csv", header)]),
+        None,
+        images=["btn.png"],
+    )
+    assert [i.label for i in items] == ["btn.png"]

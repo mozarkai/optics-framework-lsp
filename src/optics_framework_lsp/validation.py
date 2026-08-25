@@ -269,17 +269,45 @@ def declared(ast: AST) -> set[str]:
     return {name for _, _, name in declarations(ast)}
 
 
+def substitutes_at(step_name: str | None, count: int) -> set[int]:
+    """Which params the keyword substitutes `${refs}` *inside*.
+
+    `resolve_param` looks a name up only when the whole cell is one `${name}`. These three
+    keywords re-scan their own param and raise `E0702` on a missing name, so an embedded ref
+    there is a real reference; anywhere else the keyword is handed the text verbatim.
+    """
+    name = slug(step_name)
+    if name == "read data":
+        return {2}  # the query — `_resolve_query_vars`
+    if name == "evaluate":
+        return {1}  # the expression — `_compute_expression`
+    if name == "condition":
+        # Whatever is not a target is a condition, and `_resolve_condition` substitutes it.
+        return set(range(count)) - module_args(step_name, count)
+    return set()
+
+
 def element_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
-    """Every ${name} a module step reads, as uri, row, name."""
+    """Every ${name} a module step actually resolves, as uri, row, name.
+
+    Not the step-name cell: the runner looks that up in `keyword_map`, so a `${ref}` there is
+    a missing keyword rather than a missing element.
+    """
     for module in ast.modules:
         for step in module.steps:
-            # A declaring keyword names its target, it does not reference it.
-            declares = slug(step.step_name) in _DECLARES
-            params = step.params[1:] if declares else step.params
+            count = len(step.params)
+            binds = declares_at(step.step_name, count)
+            embeds = substitutes_at(step.step_name, count)
 
-            for text in (step.step_name or "", *params):
-                for name in VAR.findall(text):
-                    yield module.uri, step.row, name
+            for at, cell in enumerate(step.params):
+                # A declaring keyword names its target, it does not reference it.
+                if at in binds:
+                    continue
+                if whole := VAR.fullmatch(cell):
+                    yield module.uri, step.row, whole.group(1)
+                elif at in embeds:
+                    for name in VAR.findall(cell):
+                        yield module.uri, step.row, name
 
 
 def undefined(ast: AST) -> set[str]:

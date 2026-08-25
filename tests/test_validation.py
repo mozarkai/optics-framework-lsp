@@ -138,3 +138,123 @@ def test_clean_workspace_has_no_diagnostics():
         MODULES: "module_name,module_step,param_1\nLogin,Press Element,${btn}\n",
         ELEMENTS: "element_name,element_id\nbtn,//a\n",
     }) == {}
+
+
+def test_read_data_declares_a_variable():
+    found = _check(**{
+        MODULES: "module_name,module_step,param_1,param_2\n"
+                 "M,Read Data,serial_id,${env_var}\n"
+                 "M,Press Element,${serial_id}\n",
+        ELEMENTS: "element_name,element_id\nenv_var,ENV:X\n",
+    })
+    assert found == {}
+
+
+def test_declaration_written_as_a_placeholder():
+    found = _check(**{
+        MODULES: "module_name,module_step,param_1,param_2,param_3\n"
+                 "M,Date Evaluate,${new_date},${today},+1 day\n"
+                 "M,Press Element,${new_date}\n",
+        ELEMENTS: "element_name,element_id\ntoday,2020-01-01\n",
+    })
+    assert found == {}
+
+
+def test_run_loop_declares_its_loop_variables():
+    found = _check(**{
+        MODULES: "module_name,module_step,param_1,param_2,param_3\n"
+                 "M,Run Loop,Target,mobile_number,${List}\n"
+                 "Target,Press Element,${mobile_number}\n",
+        ELEMENTS: "element_name,element_id\nList,1|2|3\n",
+    })
+    assert found == {}
+
+
+def test_undefined_element_is_now_an_error():
+    (diagnostic,) = _check(**{
+        MODULES: "module_name,module_step,param_1\nM,Press Element,${nope}\n",
+    })[MODULES]
+    assert diagnostic.code == "element-not-found"
+    assert diagnostic.severity == DiagnosticSeverity.Error
+
+
+def _targets(modules: str):
+    found = validate(parse_csv_sources([("file:///w/m.csv", modules)]))
+    return [d.message for d in found.get("file:///w/m.csv", []) if d.code == "module-not-found"]
+
+
+HEADER = "module_name,module_step,param_1,param_2,param_3,param_4\n"
+REAL = "Real,Sleep,1\n"
+
+
+def test_execute_module_and_run_loop_targets_must_exist():
+    assert _targets(HEADER + REAL + "M,Execute Module,Typo\n") == ["Module 'Typo' not found"]
+    assert _targets(HEADER + REAL + "M,Run Loop,Typo,2\n") == ["Module 'Typo' not found"]
+    assert _targets(HEADER + REAL + "M,Execute Module,Real\n") == []
+
+
+def test_condition_checks_targets_but_not_conditions():
+    # Even params hold a condition, which may be an expression rather than a module.
+    assert _targets(HEADER + REAL + "M,Condition,${x} == 5,Real\n") == []
+    # Odd params are the module to run.
+    assert _targets(HEADER + REAL + "M,Condition,${x} == 5,Typo\n") == [
+        "Module 'Typo' not found"
+    ]
+
+
+def test_condition_checks_a_bare_else_target():
+    # An odd count means the last param is the else-target, so it is a module.
+    assert _targets(HEADER + REAL + "M,Condition,${x} == 5,Real,Typo\n") == [
+        "Module 'Typo' not found"
+    ]
+    assert _targets(HEADER + REAL + "M,Condition,${x} == 5,Real,Real\n") == []
+
+
+def test_a_variable_target_is_reported_like_any_other():
+    # The runner hands params to the keyword untouched, so ${chosen} never resolves.
+    assert _targets(HEADER + REAL + "M,Execute Module,${chosen}\n") == [
+        "Module '${chosen}' not found"
+    ]
+
+
+def test_blank_cells_do_not_shift_the_target():
+    # `read_modules` drops empty cells, so trailing commas must not move the else-target.
+    assert _targets(HEADER + REAL + "M,Execute Module,Real,,,\n") == []
+
+
+SPACED = "module_name,module_step,param_1,param_2\n"
+
+
+def _codes(modules: str, catalog=None):
+    found = validate(parse_csv_sources([("file:///w/m.csv", modules)]), catalog)
+    return [d.code for d in found.get("file:///w/m.csv", [])]
+
+
+def test_extra_spaces_in_a_keyword_are_not_an_error():
+    """`_execute_single_keyword` collapses whitespace, so the runner accepts these."""
+    from optics_framework_lsp.keyword_catalog import Keyword
+
+    catalog = {"press element": Keyword(required=1, variadic=False, params=["element"])}
+    for step in ("Press Element", "Press  Element", "press element", "PRESS ELEMENT"):
+        assert _codes(SPACED + f"M,{step},x\n", catalog) == [], step
+
+
+def test_extra_spaces_do_not_hide_a_declaration():
+    # Read Data binds serial_id, so ${serial_id} below must not be element-not-found.
+    modules = SPACED + "M,Read  Data,serial_id,f.csv\nM,Press Element,${serial_id}\n"
+    assert "element-not-found" not in _codes(modules)
+
+
+def test_a_row_repeated_with_all_its_locators_is_a_warning():
+    found = _check(**{
+        ELEMENTS: "element_name,element_id,element_id_text\nbtn,//a,Save\nbtn,//a,Save\n",
+    })
+    assert [d.code for d in found[ELEMENTS]] == ["duplicate-element"] * 2
+
+
+def test_rows_sharing_only_their_first_locator_are_still_fallbacks():
+    # `//a` twice, but the text fallback differs, so the pair is not a plain repeat.
+    found = _check(**{
+        ELEMENTS: "element_name,element_id,element_id_text\nbtn,//a,Save\nbtn,//a,Cancel\n",
+    })
+    assert found.get(ELEMENTS, []) == []

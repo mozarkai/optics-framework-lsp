@@ -64,9 +64,9 @@ _CSV_ISSUES = {
         "Whitespace-only line",
     ),
     "too-few-columns": (
-        ERROR,
+        WARNING,
         "csv-too-few-columns",
-        "Row has fewer than 2 columns",
+        "Row has fewer than 2 columns, so it is skipped",
     ),
     "too-many-columns": (
         WARNING,
@@ -82,9 +82,20 @@ def _diag(uri: str, row: int, severity: int, code: str, message: str) -> _Keyed:
     return uri, Finding(severity=severity, code=code, message=message, row=row)
 
 
+# Where a short row is not skipped but fatal. `read_test_cases` and
+# `read_error_definitions` do `row.get(column, "").strip()`, and `csv.DictReader` fills a
+# missing field with None rather than the default — so they raise `AttributeError`, and
+# neither `_load_test_cases` nor `_load_error_definitions` is wrapped. The whole project
+# load dies before anything runs. `read_modules` and `read_elements` drop the row instead.
+_SHORT_ROW_ABORTS_THE_RUN = {"test_cases", "error_definitions"}
+
+
 def _hygiene(ast: AST) -> Iterator[_Keyed]:
     for issue in ast.csv_issues:
         severity, code, message = _CSV_ISSUES[issue.kind]
+        if issue.kind == "too-few-columns" and ast.kinds.get(issue.uri) in _SHORT_ROW_ABORTS_THE_RUN:
+            severity = ERROR
+            message = "Row has fewer than 2 columns, which aborts the whole run"
         yield _diag(issue.uri, issue.row, severity, code, message)
 
 

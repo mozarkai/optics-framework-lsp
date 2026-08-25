@@ -149,3 +149,49 @@ def test_a_module_named_after_a_keyword_is_never_called_by_those_steps():
     assert _refs(M, MODULES, 10, "Launch App") == []
     # Asked as a keyword instead, those same cells are exactly what you want.
     assert ("more.csv", 4) in _refs(M2, MORE, 4, "Launch App")
+
+
+# --- resources ---
+
+def test_a_template_image_lists_the_element_rows_using_it():
+    assert _refs(E, ELEMENTS, 3, "login_btn.png") == [
+        ("elements.csv", 3),
+        ("elements.csv", 4),
+    ]
+
+
+def test_an_image_in_a_second_locator_column_is_found_too():
+    # Row 4 keeps the image in `element_id_2`; only the first cell used to be read.
+    assert _refs(E, ELEMENTS, 4, "login_btn.png") == [
+        ("elements.csv", 3),
+        ("elements.csv", 4),
+    ]
+
+
+def test_an_xpath_is_not_a_shared_resource():
+    assert _refs(E, ELEMENTS, 2, "//a") == []
+
+
+def test_a_data_file_lists_every_read_data():
+    assert _refs(M, MODULES, 4, "data/users.csv") == [("modules.csv", 4)]
+
+
+def test_an_api_identifier_lists_every_invoke():
+    assert _refs(M, MODULES, 6, "auth.login") == [("modules.csv", 6)]
+
+
+# --- nothing to reference ---
+
+def test_a_test_case_name_has_no_references():
+    # Nothing in the dsl can run a test case: they are the root of the tree.
+    assert _refs(T, TESTS, 2, "TC") == []
+
+
+def test_an_error_code_has_no_references():
+    # Matched against on-screen text at run time, never named from a csv.
+    assert _refs(X, ERRORS, 2, "E001") == []
+    assert _refs(X, ERRORS, 2, "Crashed") == []
+
+
+def test_the_header_row_references_nothing():
+    assert _refs(M, MODULES, 1, "module_step") == []

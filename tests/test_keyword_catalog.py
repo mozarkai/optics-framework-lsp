@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import subprocess
 import sys
@@ -14,7 +15,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 def test_the_shipped_table_is_the_real_signatures():
     """No install needed — this is the point of hardcoding."""
-    assert len(CATALOG) == 46
+    assert len(CATALOG) == 49
     assert OPTICS_VERSION
 
     press = CATALOG["press element"]
@@ -34,12 +35,43 @@ def test_the_shipped_table_is_the_real_signatures():
 
 
 def test_what_the_runtime_would_not_register_is_absent():
-    # A private helper class lives beside ActionKeyword and must not leak in.
+    # `_HealProviders` sits beside `ActionKeyword` and has a `pagesource` method. The
+    # generator reads only the named class body, so it must never surface as a keyword.
     assert "pagesource" not in CATALOG
-    # `@DeprecationWarning` rebinds these to a non-callable exception instance, so
-    # `KeywordRegistry.register` skips them.
-    for deprecated in ("press checkbox", "press radio button", "swipe seekbar to right android"):
-        assert deprecated not in CATALOG
+
+
+def test_a_deprecationwarning_decorator_excludes_a_keyword(tmp_path):
+    """The generator's filter, pinned against a synthetic source. No optics release carries
+    `@DeprecationWarning` today, so the shipped table can no longer exercise this — and
+    without a test the filter is code nobody can see the purpose of."""
+    api = tmp_path / "optics_framework" / "api"
+    api.mkdir(parents=True)
+    for module, class_name in (
+        ("action_keyword", "ActionKeyword"),
+        ("app_management", "AppManagement"),
+        ("flow_control", "FlowControl"),
+        ("verifier", "Verifier"),
+    ):
+        (api / f"{module}.py").write_text(
+            f"class {class_name}:\n"
+            "    def kept(self, element): pass\n"
+            "    @DeprecationWarning\n"
+            "    def dropped(self, element): pass\n"
+        )
+
+    found = _generator().signatures(tmp_path / "optics_framework")
+    assert "kept" in found
+    assert "dropped" not in found
+
+
+def _generator():
+    """`scripts/` is not a package, so load the generator by path."""
+    spec = importlib.util.spec_from_file_location(
+        "update_catalog", REPO / "scripts" / "update_catalog.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_the_table_is_not_stale():

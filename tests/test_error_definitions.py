@@ -74,3 +74,96 @@ def _headers(text: str, character: int = 0):
     return [(i.label, i.detail, i.kind) for i in items]
 
 
+def test_an_empty_csv_offers_the_four_header_sets():
+    offered = _headers("")
+    assert [detail for _, detail, _ in offered] == [
+        "test cases",
+        "modules",
+        "elements",
+        "error definitions",
+    ]
+    assert {kind for _, _, kind in offered} == {CompletionItemKind.Struct}
+
+
+def test_the_elements_header_keeps_the_case_the_framework_reads():
+    # `read_elements` does row.get("Element_Name"), so a lowercase header loads nothing.
+    assert ("Element_Name,Element_ID", "elements", CompletionItemKind.Struct) in _headers("")
+
+
+def test_the_modules_header_carries_the_five_params_real_projects_write():
+    labels = [label for label, _, _ in _headers("")]
+    assert "module_name,module_step,param_1,param_2,param_3,param_4,param_5" in labels
+
+
+def test_a_partly_typed_header_still_offers_them():
+    assert len(_headers("err", 3)) == 4
+
+
+def test_a_file_that_already_has_rows_does_not():
+    assert _headers("test_case,test_step\nTC,Login\n") != []
+    assert not any(detail == "modules" for _, detail, _ in _headers("test_case,test_step\nTC,Login\n"))
+
+
+def test_only_the_first_column_offers_a_header():
+    # Past the first comma a header set would nest inside itself: `test_case,test_case,…`.
+    assert _headers("test_case,", len("test_case,")) == []
+
+
+def test_two_rows_matching_the_same_text_both_fire():
+    body = "E001,Crashed,,\nE002,Crashed,,\nE003,Timed out,,\n"
+    assert _codes(body) == [
+        (2, "duplicate-match-string"),
+        (3, "duplicate-match-string"),
+    ]
+    (first, second) = validate(_ast(body))[URI]
+    # Each row names the others, so a clash is one hop away rather than a hunt.
+    assert first.message == "Duplicate match string 'Crashed', see line 3"
+    assert second.message == "Duplicate match string 'Crashed', see line 2"
+    assert first.severity == DiagnosticSeverity.Warning
+
+
+def _across_files(a: str, b: str):
+    ast = parse_csv_sources([(URI, HEADER + a), (OTHER, HEADER + b)])
+    found = validate(ast)
+    return {uri.rsplit("/", 1)[-1]: [d.code for d in ds] for uri, ds in found.items()}
+
+
+def test_three_rows_name_the_other_two():
+    body = "E001,Crashed,,\nE002,Crashed,,\nE003,Crashed,,\n"
+    assert [d.message.split("see ")[1] for d in validate(_ast(body))[URI]] == [
+        "lines 3, 4",
+        "lines 2, 4",
+        "lines 2, 3",
+    ]
+
+
+def test_a_row_in_another_file_is_named_with_its_file():
+    ast = parse_csv_sources([(URI, HEADER + "E001,Crashed,,\n"), (OTHER, HEADER + "E001,Frozen,,\n")])
+    found = validate(ast)
+    assert found[URI][0].message.endswith("see more_errors.csv line 2")
+    assert found[OTHER][0].message.endswith("see error_definitions.csv line 2")
+
+
+def test_a_code_repeated_in_another_file_still_overwrites():
+    # `_load_error_definitions` merges every file into one dict keyed by code, so unlike
+    # elements these clash across files.
+    assert _across_files("E001,Crashed,,\n", "E001,Frozen,,\n") == {
+        "error_definitions.csv": ["duplicate-error-code"],
+        "more_errors.csv": ["duplicate-error-code"],
+    }
+
+
+def test_a_match_string_repeated_in_another_file_is_reported_too():
+    assert _across_files("E001,Crashed,,\n", "E002,Crashed,,\n") == {
+        "error_definitions.csv": ["duplicate-match-string"],
+        "more_errors.csv": ["duplicate-match-string"],
+    }
+
+
+def test_an_element_name_in_two_files_is_still_fine():
+    # Elements merge into a list, so sharing a name across files is the ard/ios pattern.
+    two = parse_csv_sources([
+        ("file:///w/ard.csv", "element_name,element_id\nbtn,//a\n"),
+        ("file:///w/ios.csv", "element_name,element_id\nbtn,//b\n"),
+    ])
+    assert validate(two) == {}

@@ -10,8 +10,9 @@ from lsprotocol import types
 from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path
 
-from . import completion, keyword_catalog
+from . import completion
 from .parser.ast import AST
+from .keyword_catalog import CATALOG
 from .parser.csv_parser import parse_csv_sources
 from . import rename as renaming
 from .symbols import symbols
@@ -71,16 +72,6 @@ class OpticsLanguageServer(LanguageServer):
         # Files we last published to per folder, so fixed problems clear in the editor
         # without one folder wiping another's diagnostics.
         self._published: defaultdict[str, set[str]] = defaultdict(set)
-        self._catalogs: dict[str, keyword_catalog.Catalog | None] = {}
-        # The install each catalog was read from, so `pip install` is picked up.
-        self._probed: dict[str, tuple[str, float] | None] = {}
-
-    def refreshes_tokens(self) -> bool:
-        """Whether the client asked to be told when tokens go stale. `getattr` because
-        there are no capabilities before initialize, which is how a test drives us."""
-        capabilities = getattr(self, "client_capabilities", None)
-        workspace = getattr(capabilities, "workspace", None)
-        return bool(getattr(workspace, "semantic_tokens", None))
 
     def folder_of(self, uri: str) -> str | None:
         return next((f for f in self.workspace.folders if uri.startswith(f)), None)
@@ -112,30 +103,10 @@ class OpticsLanguageServer(LanguageServer):
             )
         return sources
 
-    async def sync_catalog(self, folder_uri: str) -> None:
-        """Read the keyword catalog if the project's optics install has changed."""
-        root = to_fs_path(folder_uri)
-        if root is None:
-            return
-
-        marker = keyword_catalog.installed_at(Path(root))
-        if folder_uri in self._catalogs and marker == self._probed.get(folder_uri):
-            return
-
-        # Recorded before the await, so keystrokes during a probe do not stack.
-        self._probed[folder_uri] = marker
-        self._catalogs[folder_uri] = await keyword_catalog.load(Path(root))
-
-        # Semantic tokens are pulled once and cached until the buffer changes, so a
-        # catalog arriving after the first pull needs a nudge, or every keyword stays
-        # coloured as a module.
-        if self._catalogs[folder_uri] and self.refreshes_tokens():
-            self.workspace_semantic_tokens_refresh(None)
-
     def validate_folder(self, folder_uri: str) -> None:
         found = validate(
             parse_csv_sources(self.sources(self.files(folder_uri))),
-            self._catalogs.get(folder_uri),
+            CATALOG,
         )
 
         for uri in self._published[folder_uri] - found.keys():
@@ -176,47 +147,42 @@ async def initialized(ls: OpticsLanguageServer, params: types.InitializedParams)
         )
 
     for folder in ls.workspace.folders:
-        # Structural problems first; keyword ones follow once the catalog is read.
-        ls.validate_folder(folder)
-        await ls.sync_catalog(folder)
         ls.validate_folder(folder)
 
 
-async def _revalidate(ls: OpticsLanguageServer, uri: str) -> None:
+def _revalidate(ls: OpticsLanguageServer, uri: str) -> None:
     # Cross-file rules mean one edit can change diagnostics anywhere in the project.
     if folder := ls.folder_of(uri):
-        await ls.sync_catalog(folder)
         ls.validate_folder(folder)
 
 
 @server.feature(types.TEXT_DOCUMENT_DID_OPEN)
-async def did_open(ls: OpticsLanguageServer, params: types.DidOpenTextDocumentParams) -> None:
-    await _revalidate(ls, params.text_document.uri)
+def did_open(ls: OpticsLanguageServer, params: types.DidOpenTextDocumentParams) -> None:
+    _revalidate(ls, params.text_document.uri)
 
 
 @server.feature(types.TEXT_DOCUMENT_DID_CHANGE)
-async def did_change(ls: OpticsLanguageServer, params: types.DidChangeTextDocumentParams) -> None:
-    await _revalidate(ls, params.text_document.uri)
+def did_change(ls: OpticsLanguageServer, params: types.DidChangeTextDocumentParams) -> None:
+    _revalidate(ls, params.text_document.uri)
 
 
 @server.feature(types.TEXT_DOCUMENT_DID_SAVE)
-async def did_save(ls: OpticsLanguageServer, params: types.DidSaveTextDocumentParams) -> None:
-    await _revalidate(ls, params.text_document.uri)
+def did_save(ls: OpticsLanguageServer, params: types.DidSaveTextDocumentParams) -> None:
+    _revalidate(ls, params.text_document.uri)
 
 
 @server.feature(types.WORKSPACE_DID_CHANGE_WATCHED_FILES)
-async def did_change_watched_files(
+def did_change_watched_files(
     ls: OpticsLanguageServer, params: types.DidChangeWatchedFilesParams
 ) -> None:
     for folder in {f for c in params.changes if (f := ls.folder_of(c.uri))}:
-        await ls.sync_catalog(folder)
         ls.validate_folder(folder)
 
 
 @server.feature(types.TEXT_DOCUMENT_DID_CLOSE)
-async def did_close(ls: OpticsLanguageServer, params: types.DidCloseTextDocumentParams) -> None:
+def did_close(ls: OpticsLanguageServer, params: types.DidCloseTextDocumentParams) -> None:
     # The buffer is gone, so fall back to what is on disk.
-    await _revalidate(ls, params.text_document.uri)
+    _revalidate(ls, params.text_document.uri)
 
 
 @server.feature(
@@ -237,7 +203,7 @@ def completions(
         ls.workspace.get_text_document(uri).source,
         params.position,
         ast,
-        ls._catalogs.get(folder),
+        CATALOG,
         images=images(files),
         data_files=data_files(to_fs_path(folder), files, ast),
         apis=apis(files),
@@ -259,7 +225,7 @@ def semantic_tokens(
     # Which names are modules is a whole-project question, as it is for references.
     source = ls.workspace.get_text_document(uri).source
     ast = parse_csv_sources(ls.sources(ls.files(folder)))
-    return types.SemanticTokens(data=tokens(source, ast, ls._catalogs.get(folder)))
+    return types.SemanticTokens(data=tokens(source, ast, CATALOG))
 
 
 @server.feature(types.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
@@ -281,7 +247,7 @@ def hover(ls: OpticsLanguageServer, params: types.HoverParams) -> types.Hover | 
     return completion.hover(
         ls.workspace.get_text_document(params.text_document.uri).source,
         params.position,
-        ls._catalogs.get(folder),
+        CATALOG,
     )
 
 
@@ -295,7 +261,7 @@ def rename(ls: OpticsLanguageServer, params: types.RenameParams) -> types.Worksp
     # Every file, because the runner keys by name and a missed cell changes what runs.
     edits = renaming.rename(
         ls.sources(ls.files(folder)),
-        ls._catalogs.get(folder),
+        CATALOG,
         ls.workspace.get_text_document(uri).source,
         params.position,
         params.new_name,
@@ -311,7 +277,7 @@ def prepare_rename(
     return renaming.prepare(
         ls.workspace.get_text_document(params.text_document.uri).source,
         params.position,
-        ls._catalogs.get(folder) if folder else None,
+        CATALOG,
     )
 
 
@@ -329,7 +295,7 @@ def references(
         ls.workspace.get_text_document(uri).source,
         params.position,
         ast,
-        ls._catalogs.get(folder),
+        CATALOG,
         include_declaration=params.context.include_declaration,
     )
 
@@ -348,7 +314,7 @@ def definition(
         ls.workspace.get_text_document(uri).source,
         params.position,
         ast,
-        ls._catalogs.get(folder),
+        CATALOG,
     )
 
 
@@ -367,5 +333,5 @@ def signature_help(
     return completion.signature(
         ls.workspace.get_text_document(params.text_document.uri).source,
         params.position,
-        ls._catalogs.get(folder),
+        CATALOG,
     )

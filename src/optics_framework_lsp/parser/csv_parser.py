@@ -60,6 +60,20 @@ def _cell(values: list[str], i: int) -> str | None:
     return (values[i] if i < len(values) else "") or None
 
 
+def filled_params(values: list[str], headers: list[str]) -> list[int]:
+    """The columns `read_modules` hands the keyword: `param_*`, non-blank, in header
+    order. A `notes` or trailing unnamed column never reaches it, and a blank cell holds
+    no place, so a param's index is its position in this list.
+
+    `headers` is lowercased, so `Param_1` counts here though the reader's case-sensitive
+    `startswith` skips it: a file spelling headers that way loads nothing at all anyway."""
+    return [
+        i
+        for i, header in enumerate(headers)
+        if header.startswith("param_") and i < len(values) and values[i]
+    ]
+
+
 def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
     ast = AST()
 
@@ -121,16 +135,16 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
                     test_cases[name].steps.append(Step(step_name=step, row=row))
 
             if is_module_csv:
-                step_index = headers.index("module_step")
                 name = _cell(values, headers.index("module_name"))
-                step_name = _cell(values, step_index)
+                step_name = _cell(values, headers.index("module_step"))
 
                 if name and step_name:
                     if name not in modules:
                         modules[name] = Block(name=name, uri=uri, start_row=row)
                         ast.modules.append(modules[name])
+                    args = [values[i] for i in filled_params(values, headers)]
                     modules[name].steps.append(
-                        Step(step_name=step_name, row=row, params=values[step_index + 1 :])
+                        Step(step_name=step_name, row=row, params=args)
                     )
 
             if is_element_csv:

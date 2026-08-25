@@ -9,7 +9,7 @@ from lsprotocol.types import Position, Range, TextEdit
 
 from .completion import Cursor
 from .keyword_catalog import Catalog, slug
-from .parser.csv_parser import sheet, spans
+from .parser.csv_parser import filled_params, sheet, spans
 from .validation import VAR, declares_at, module_args
 
 _Place = tuple[str, int, int, int]
@@ -52,20 +52,13 @@ def _symbol(cursor: Cursor, catalog: Catalog | None) -> tuple[str, str] | None:
 
     # Anything that is neither a bound name nor a module we run — a data file, an api
     # identifier, a plain value — names nothing we own.
-    param, count = _param_at(cursor.fields, step, cursor.column)
-    if param in declares_at(cursor.step_name(step), count):
+    filled = filled_params(cursor.fields, cursor.headers)
+    param = filled.index(cursor.column) if cursor.column in filled else -1
+    if param in declares_at(cursor.step_name(step), len(filled)):
         return "element", field
-    if param in _runs(cursor.step_name(step), count):
+    if param in _runs(cursor.step_name(step), len(filled)):
         return "module", field.removeprefix("!")
     return None
-
-
-def _param_at(fields: list[str], step_at: int | None, column: int) -> tuple[int, int]:
-    """A cell's runtime param index and how many params the row has. Blank cells are
-    dropped by `read_modules`, so the index is its place among the non-blank ones."""
-    first = step_at + 1 if step_at is not None else len(fields)
-    filled = [at for at in range(first, len(fields)) if fields[at]]
-    return (filled.index(column) if column in filled else -1), len(filled)
 
 
 def _runs(step: str, count: int) -> set[int]:
@@ -82,9 +75,9 @@ def _in_row(
     step_at = headers.index("module_step") if "module_step" in headers else None
     step = fields[step_at] if step_at is not None and step_at < len(fields) else ""
 
-    _, count = _param_at(fields, step_at, -1)
-    runs = _runs(step, count)
-    binds = declares_at(step, count)
+    filled = filled_params(fields, headers)
+    runs = _runs(step, len(filled))
+    binds = declares_at(step, len(filled))
 
     for column, (start, end) in enumerate(places):
         cell = fields[column] if column < len(fields) else ""
@@ -98,9 +91,8 @@ def _in_row(
             # A keyword of the same name wins, so that cell is not this module.
             if slug(cell) not in catalog:
                 yield start, end
-        elif step_at is not None and column > step_at:
-            param, _ = _param_at(fields, step_at, column)
-            yield from _in_param(cell, start, param, runs, binds, kind, name)
+        elif column in filled:
+            yield from _in_param(cell, start, filled.index(column), runs, binds, kind, name)
 
 
 def _in_param(

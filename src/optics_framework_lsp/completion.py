@@ -436,7 +436,7 @@ def references(
             _at(m.uri, step.row)
             for m in ast.modules
             for step in m.steps
-            for i, param in enumerate(p for p in step.params if p)
+            for i, param in enumerate(step.params)
             if PARAM_KINDS.get(slug(step.step_name), {}).get(i) == kind and param == name
         ]
 

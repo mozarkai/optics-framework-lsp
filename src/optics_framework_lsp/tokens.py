@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from .completion import PARAM_KINDS, PARAM_VALUES
 from .keyword_catalog import Catalog, slug
 from .parser.ast import AST
-from .parser.csv_parser import spans
+from .parser.csv_parser import filled_params, spans
 from .validation import VAR, declares_at, module_args
 
 # Sent once in the registration; every token below is an index into this list.
@@ -69,6 +69,7 @@ def _row(
 ) -> Iterator[_Token]:
     step_at = headers.index("module_step") if "module_step" in headers else None
     step = slug(fields[step_at]) if step_at is not None and step_at < len(fields) else ""
+    params = filled_params(fields, headers)
 
     for column, (start, end) in enumerate(places):
         cell = fields[column] if column < len(fields) else ""
@@ -90,8 +91,8 @@ def _row(
             yield start, end - start, "string", 0
         elif header == "error_code":
             yield start, end - start, "enumMember", 0
-        elif step_at is not None and column > step_at:
-            yield from _params(cell, start, column - step_at - 1, step, catalog, modules)
+        elif column in params:
+            yield from _params(cell, start, params.index(column), step, catalog, modules)
 
 
 def tokens(text: str, ast: AST, catalog: Catalog | None) -> list[int]:

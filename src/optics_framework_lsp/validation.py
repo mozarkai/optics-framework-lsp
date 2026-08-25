@@ -194,10 +194,8 @@ def module_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
 
     for module in ast.modules:
         for step in module.steps:
-            # Blank cells are dropped by `read_modules`, so they do not hold a place.
-            params = [p for p in step.params if p]
-            for i in module_args(step.step_name, len(params)):
-                yield module.uri, step.row, params[i]
+            for i in module_args(step.step_name, len(step.params)):
+                yield module.uri, step.row, step.params[i]
 
 
 def module_conditions(ast: AST) -> Iterator[tuple[str, int, str]]:
@@ -210,9 +208,8 @@ def module_conditions(ast: AST) -> Iterator[tuple[str, int, str]]:
                 continue
 
             # Whatever is not a target is a condition, the bare else-target included.
-            params = [p for p in step.params if p]
-            targets = module_args(step.step_name, len(params))
-            for i, param in enumerate(params):
+            targets = module_args(step.step_name, len(step.params))
+            for i, param in enumerate(step.params):
                 if i not in targets:
                     yield module.uri, step.row, param.removeprefix("!").strip()
 
@@ -307,8 +304,7 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Finding]:
                 )
                 continue
 
-            # Trailing commas pad rows out, so blank params are not arguments.
-            given = len([p for p in step.params if p])
+            given = len(step.params)
             most = None if keyword.variadic else len(keyword.params)
             if given < keyword.required or (most is not None and given > most):
                 wanted = f"{keyword.required}+" if most is None else f"{keyword.required}-{most}"

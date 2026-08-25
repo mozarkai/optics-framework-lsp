@@ -46,7 +46,7 @@ def _block(block: Block, kind: SymbolKind) -> DocumentSymbol:
         _symbol(
             step.step_name or "",
             SymbolKind.Method,
-            ", ".join(param for param in step.params if param),
+            ", ".join(step.params),
             step.row,
             step.row,
         )

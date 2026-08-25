@@ -1,13 +1,3 @@
-# Push a tag, get a release. `git tag v0.2.0 && git push origin v0.2.0` runs the tests,
-# builds, publishes a GitHub Release, then uploads to PyPI.
-#
-# PyPI is LAST on purpose. A version number is immutable there and cannot be reused, so
-# every check that can fail runs before the one step that cannot be undone.
-#
-# The tag must be `v` plus the exact `version` in pyproject.toml. Prereleases use PEP 440
-# spellings, so `version = "0.2.0rc1"` is tagged `v0.2.0rc1` (not `v0.2.0-rc.1`) and is
-# marked as a prerelease automatically.
-
 name: release
 
 on:
@@ -86,8 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [github-release]
     permissions:
-      # Trusted publishing: PyPI verifies this workflow's OIDC identity, so there is no
-      # API token in the repository to leak or rotate.
+      # Trusted publishing: PyPI checks this workflow's OIDC identity, so there is no token.
       id-token: write
     environment:
       name: pypi
@@ -99,7 +88,9 @@ jobs:
           name: release-dists
           path: dist/
 
+      # Docker action: needs the COMMIT sha, not an annotated tag's object. No image exists
+      # for the latter. Peel with `refs/tags/<tag>^{}`.
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@a892a5a61159132606e93a2fa6f4358831b04d26 # v1.14.2
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist/

@@ -215,3 +215,163 @@ async def test_disk_change_refreshes_diagnostics(client: LanguageClient, workspa
     )
     await codes_for(client, uri, [])
 
+
+@pytest.fixture
+def catalog_project(tmp_path):
+    """No venv: the catalog is shipped, so keywords are known everywhere."""
+    (tmp_path / "modules").mkdir()
+    (tmp_path / "modules/modules.csv").write_text(
+        "module_name,module_step,param_1\nLogin,Sleep,2\n"
+    )
+    return tmp_path
+
+
+@pytest_lsp.fixture(
+    config=ClientServerConfig(
+        server_command=[sys.executable, "-m", "optics_framework_lsp.cli"]
+    ),
+)
+async def catalog_client(lsp_client: LanguageClient, catalog_project):
+    await lsp_client.initialize_session(
+        types.InitializeParams(
+            capabilities=types.ClientCapabilities(),
+            workspace_folders=[
+                types.WorkspaceFolder(uri=catalog_project.as_uri(), name="p")
+            ],
+        )
+    )
+    yield
+    await lsp_client.shutdown_session()
+
+
+async def test_completion_signature_and_hover_over_lsp(catalog_client, catalog_project):
+    path = catalog_project / "modules/modules.csv"
+    uri = path.as_uri()
+    text = path.read_text() + "New,"
+
+    catalog_client.text_document_did_open(
+        types.DidOpenTextDocumentParams(
+            types.TextDocumentItem(uri=uri, language_id="csv", version=1, text=text)
+        )
+    )
+
+    where = types.Position(line=text.count("\n"), character=len("New,"))
+    result = await catalog_client.text_document_completion_async(
+        types.CompletionParams(
+            text_document=types.TextDocumentIdentifier(uri=uri), position=where
+        )
+    )
+    labels = [i.label for i in result]
+    # Both, on the first request: no probe to wait for.
+    assert "Login" in labels and "Press Element" in labels
+
+    text += "Press Element,"
+    edit(catalog_client, uri, 2, text)
+    help_ = await catalog_client.text_document_signature_help_async(
+        types.SignatureHelpParams(
+            text_document=types.TextDocumentIdentifier(uri=uri),
+            position=types.Position(line=text.count("\n"), character=len(text.splitlines()[-1])),
+        )
+    )
+    assert help_.signatures[0].label.startswith("Press Element(element,")
+    assert help_.active_parameter == 0
+
+    hover = await catalog_client.text_document_hover_async(
+        types.HoverParams(
+            text_document=types.TextDocumentIdentifier(uri=uri),
+            position=types.Position(line=text.count("\n"), character=len("New,P")),
+        )
+    )
+    # The docstring is generated into `keywords.py` from the framework's own source.
+    assert ":param element:" in hover.contents.value
+
+
+async def test_dot_folders_are_not_scanned(catalog_client, catalog_project):
+    """optics-framework ships sample csvs of its own; they must stay invisible.
+
+    Planted rather than relied upon: an editable install keeps the package outside
+    the venv, so the real samples are not always under a dot folder.
+    """
+    planted = catalog_project / ".cache/samples/modules"
+    planted.mkdir(parents=True, exist_ok=True)
+    (planted / "modules.csv").write_text(
+        "module_name,module_step,param_1\nSample Module,Press Element,${x}\n"
+    )
+
+    uri = (catalog_project / "modules/modules.csv").as_uri()
+    result = await catalog_client.text_document_completion_async(
+        types.CompletionParams(
+            text_document=types.TextDocumentIdentifier(uri=uri),
+            position=types.Position(line=1, character=len("Login,")),
+        )
+    )
+    modules = [i.label for i in result if i.detail == "module"]
+    assert modules == ["Login"]
+
+
+def test_images_are_found_anywhere_but_dot_folders(tmp_path):
+    from optics_framework_lsp.server import OpticsLanguageServer, images
+
+    (tmp_path / "a.png").touch()
+    (tmp_path / "input_templates").mkdir()
+    (tmp_path / "input_templates" / "B.JPG").touch()
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "sample.png").touch()
+    (tmp_path / "notes.txt").touch()
+
+    assert images(OpticsLanguageServer().files(tmp_path.as_uri())) == ["B.JPG", "a.png"]
+
+
+def test_data_files_exclude_the_projects_own_csvs(tmp_path):
+    from optics_framework_lsp.parser.csv_parser import parse_csv_sources
+    from optics_framework_lsp.server import data_files
+
+    for name, content in WORKSPACE.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    # WORKSPACE already puts its elements csv here, which must not be offered as data.
+    # Nor is an error-definitions csv data: it is one of our four kinds.
+    (tmp_path / "data").mkdir(exist_ok=True)
+    (tmp_path / "data" / "error_definitions.csv").write_text(
+        "error_code,match_string\nE001,Crashed\n"
+    )
+    (tmp_path / "data" / "users.csv").write_text("id,name\n1,a\n")
+    (tmp_path / "data" / "api.json").write_text("{}")
+    (tmp_path / "notes.txt").write_text("")
+
+    files = [p for p in tmp_path.rglob("*") if p.is_file()]
+    ast = parse_csv_sources(
+        [(p.as_uri(), p.read_text()) for p in files if p.suffix == ".csv"]
+    )
+
+    assert data_files(str(tmp_path), files, ast) == ["data/api.json", "data/users.csv"]
+
+
+API_YAML = """
+api:
+  collections:
+    users:
+      name: Users
+      base_url: https://example.test
+      apis:
+        get_user:
+          name: get_user
+          endpoint: /users/1
+        create_user:
+          name: create_user
+          endpoint: /users
+"""
+
+
+def test_apis_are_read_from_project_yaml(tmp_path):
+    from optics_framework_lsp.server import apis
+
+    (tmp_path / "api.yaml").write_text(API_YAML)
+    # A config yaml has no collections, and a broken one must not raise.
+    (tmp_path / "config.yaml").write_text("driver_sources:\n  - appium\n")
+    (tmp_path / "broken.yml").write_text("api: [unclosed\n")
+
+    files = [p for p in tmp_path.rglob("*") if p.is_file()]
+    assert apis(files) == ["users.create_user", "users.get_user"]
+

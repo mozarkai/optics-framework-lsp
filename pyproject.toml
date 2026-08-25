@@ -1,16 +1,33 @@
 [project]
 name = "optics-framework-lsp"
 version = "0.1.0"
-description = "Add your description here"
+description = "Language server and linter for optics-framework csv test suites"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     { name = "Bishwa Bhusan Saha", email = "77796630+kun-codes@users.noreply.github.com" }
 ]
 requires-python = ">=3.14"
+keywords = ["lsp", "language-server", "optics-framework", "linter", "test-automation", "csv"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Text Editors :: Integrated Development Environments (IDE)",
+]
+
 dependencies = [
     "pygls>=2.1.1",
     "pyyaml>=6.0.3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mozarkai/optics-framework-lsp"
+Repository = "https://github.com/mozarkai/optics-framework-lsp"
+Issues = "https://github.com/mozarkai/optics-framework-lsp/issues"
 
 [project.scripts]
 optics-lsp = "optics_framework_lsp.cli:main"

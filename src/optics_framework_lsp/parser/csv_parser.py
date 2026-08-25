@@ -96,6 +96,13 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
         if not (is_test_case_csv or is_module_csv or is_element_csv or is_error_csv):
             continue
 
+        ast.kinds[uri] = (
+            "test_cases" if is_test_case_csv
+            else "modules" if is_module_csv
+            else "elements" if is_element_csv
+            else "error_definitions"
+        )
+
         # Empty line is fine; whitespace-only is not.
         for cells, row in blank_rows:
             if any(c != "" for c in cells):

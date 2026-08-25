@@ -65,6 +65,10 @@ class Block:
 
 @dataclass(slots=True)
 class AST:
+    # What each file's header row made it, by uri. A csv missing from here matched none of
+    # the four kinds, so the framework ignores it too — and a caller needs to say so rather
+    # than let a skipped file read as a clean one.
+    kinds: dict[str, str] = field(default_factory=dict)
     test_cases: list[Block] = field(default_factory=list)
     modules: list[Block] = field(default_factory=list)
     elements: list[Element] = field(default_factory=list)

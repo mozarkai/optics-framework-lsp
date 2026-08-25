@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No `enable-cache: true`: v10's default is `auto`, which caches normally but
+      # disables the cache on events where a poisoned entry could be planted. Forcing
+      # `true` would opt back out of that.
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      # `--locked` fails if uv.lock is out of date with pyproject.toml, rather than
+      # quietly resolving something the committed lockfile never described.
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run tests
+        run: uv run pytest tests/ -q
+
+      # Catching a broken sdist or wheel here
+      - name: Build
+        run: uv build

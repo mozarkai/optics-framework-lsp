@@ -1,10 +1,10 @@
 # GENERATED — do not edit. Run `python scripts/update_catalog.py` to refresh.
 #
-# Keyword signatures read from optics-framework 1.9.0. `required` counts the leading
+# Keyword signatures read from optics-framework 1.9.3. `required` counts the leading
 # positional params with no default; `variadic` means the keyword takes `*args`, so any
 # number of params is legal.
 
-OPTICS_VERSION = '1.9.0'
+OPTICS_VERSION = '1.9.3'
 
 KEYWORDS: dict[str, dict] = {
     'assert equality': {
@@ -217,6 +217,13 @@ KEYWORDS: dict[str, dict] = {
         'defaults': {'repeat': "'1'", 'event_name': 'None'},
         'doc': 'Press an element by percentage coordinates.\n\n:param percent_x: X percentage of the press (as string, will be converted to float).\n:param percent_y: Y percentage of the press (as string, will be converted to float).\n:param repeat: Number of times to repeat the press.\n:param event_name: The event triggering the press.',
     },
+    'press checkbox': {
+        'required': 1,
+        'variadic': False,
+        'params': ['element', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name'],
+        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
+        'doc': 'Press a specified checkbox element.\n\n.. deprecated:: Deprecated alias of :meth:`press_element` — use ``Press Element`` directly.\n\n:param element: The checkbox element (Image template, OCR template, or XPath).\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the press.',
+    },
     'press element': {
         'required': 1,
         'variadic': False,
@@ -230,6 +237,13 @@ KEYWORDS: dict[str, dict] = {
         'params': ['keycode', 'event_name'],
         'defaults': {'event_name': 'None'},
         'doc': 'Press a specified keycode.\n\n:param keycode: The keycode to be pressed.\n:param event_name: The event triggering the press.',
+    },
+    'press radio button': {
+        'required': 1,
+        'variadic': False,
+        'params': ['element', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name'],
+        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
+        'doc': 'Press a specified radio button.\n\n.. deprecated:: Deprecated alias of :meth:`press_element` — use ``Press Element`` directly.\n\n:param element: The radio button element (Image template, OCR template, or XPath).\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the press.',
     },
     'read data': {
         'required': 2,
@@ -307,6 +321,13 @@ KEYWORDS: dict[str, dict] = {
         'params': ['element', 'direction', 'swipe_length', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name'],
         'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
         'doc': 'Perform a swipe action starting from a specified element.\n\n:param element: The element to swipe from (Image template, OCR template, or XPath).\n:param direction: The swipe direction (up, down, left, right).\n:param swipe_length: The length of the swipe.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the swipe.',
+    },
+    'swipe seekbar to right android': {
+        'required': 1,
+        'variadic': False,
+        'params': ['element', 'event_name'],
+        'defaults': {'event_name': 'None'},
+        'doc': 'Swipe a seekbar to the right.\n\n.. deprecated:: Deprecated; prefer :meth:`swipe_from_element` / :meth:`swipe`.\n\n:param element: The seekbar element (Image template, OCR template, or XPath).',
     },
     'swipe until element appears': {
         'required': 3,

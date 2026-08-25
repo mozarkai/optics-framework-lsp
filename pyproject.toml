@@ -1,6 +1,6 @@
 [project]
 name = "optics-framework-lsp"
-version = "0.1.0"
+version = "1.0.0"
 description = "Language server and linter for optics-framework csv test suites"
 readme = "README.md"
 license = "Apache-2.0"

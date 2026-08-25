@@ -258,3 +258,37 @@ def test_rows_sharing_only_their_first_locator_are_still_fallbacks():
         ELEMENTS: "element_name,element_id,element_id_text\nbtn,//a,Save\nbtn,//a,Cancel\n",
     })
     assert found.get(ELEMENTS, []) == []
+
+
+def test_a_short_row_is_fatal_only_where_the_reader_crashes_on_it():
+    """`read_test_cases` and `read_error_definitions` do `row.get(col, "").strip()` on a
+    field DictReader filled with None, so they raise and the whole project load dies.
+    `read_modules` and `read_elements` drop the row and carry on."""
+    found = _check(**{
+        TESTS: "test_case,test_step\nTC,Login\nSHORT\n",
+        MODULES: "module_name,module_step\nLogin,Launch Application\nSHORT\n",
+        ELEMENTS: "element_name,element_id\nbtn,//a\nSHORT\n",
+        "file:///w/errors.csv": "error_code,match_string\nE1,boom\nSHORT\n",
+    })
+
+    def short(uri):
+        (diag,) = [d for d in found[uri] if d.code == "csv-too-few-columns"]
+        return diag.severity, diag.message
+
+    assert short(TESTS) == (DiagnosticSeverity.Error, "Row has fewer than 2 columns, which aborts the whole run")
+    assert short("file:///w/errors.csv")[0] == DiagnosticSeverity.Error
+    assert short(MODULES) == (DiagnosticSeverity.Warning, "Row has fewer than 2 columns, so it is skipped")
+    assert short(ELEMENTS)[0] == DiagnosticSeverity.Warning
+
+
+def test_only_a_short_row_is_upgraded_by_the_file_kind():
+    """A whitespace-only line and an over-wide row are skipped by every reader, so being in
+    a test_cases csv must not make them fatal."""
+    found = _check(**{
+        TESTS: "test_case,test_step\nTC,Login\n   \nTC,Login,extra\n",
+        MODULES: "module_name,module_step\nLogin,Launch Application\n",
+    })
+    assert [(d.code, d.severity, d.message) for d in found[TESTS]] == [
+        ("csv-whitespace-line", DiagnosticSeverity.Warning, "Whitespace-only line"),
+        ("csv-too-many-columns", DiagnosticSeverity.Warning, "Row has more columns than the header"),
+    ]

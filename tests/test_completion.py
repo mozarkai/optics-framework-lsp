@@ -185,3 +185,72 @@ def test_modules_are_offered_without_a_catalog():
     # Not "Other": `read_modules` drops a row with no step, so the half-typed row
     # defines nothing yet and offering it would only suggest calling itself.
     assert labels == ["Login"]
+
+
+def _sig(base: str, line: str):
+    return signature(
+        base + line, Position(line=base.count("\n"), character=len(line)), CATALOG
+    )
+
+
+def test_signature_marks_the_active_param():
+    help_ = _sig(MODULES, "Other,Press Element,")
+
+    assert help_.signatures[0].label == "Press Element(element, repeat='1')"
+    assert help_.active_parameter == 0
+    assert _sig(MODULES, "Other,Press Element,${btn},").active_parameter == 1
+
+    # A client highlights by matching the label, so it has to be a substring of the whole.
+    labels = [p.label for p in help_.signatures[0].parameters]
+    assert labels == ["element", "repeat='1'"]
+    assert all(p in help_.signatures[0].label for p in labels)
+
+
+def test_signature_stops_at_the_last_param():
+    assert _sig(MODULES, "Other,Press Element,${btn},1,extra,").active_parameter == 1
+
+
+def test_no_signature_for_unknown_or_module_steps():
+    assert _sig(MODULES, "Other,Login,") is None
+    assert _sig(MODULES, "Other,Nope,") is None
+    # Nor while still typing the step name itself.
+    assert _sig(MODULES, "Other,Press") is None
+
+
+
+def test_accepting_a_param_past_the_header_widens_it():
+    # MODULES declares param_1 and param_2, so a third param is not covered.
+    (item,) = [
+        i for i in _typing(MODULES, "Other,Press Element,${btn},x,", ELEMENTS)
+        if i.label == "env"
+    ]
+    (edit,) = item.additional_text_edits
+    assert edit.new_text == ",param_3"
+    assert edit.range.start == Position(line=0, character=len(MODULES.splitlines()[0]))
+    assert edit.range.start == edit.range.end  # an insert, nothing replaced
+
+
+def test_two_params_past_the_header_add_both():
+    (item,) = [
+        i for i in _typing(MODULES, "Other,Press Element,${btn},x,y,", ELEMENTS)
+        if i.label == "env"
+    ]
+    assert item.additional_text_edits[0].new_text == ",param_3,param_4"
+
+
+def test_a_param_the_header_covers_is_left_alone():
+    (item,) = [
+        i for i in _typing(MODULES, "Other,Press Element,", ELEMENTS) if i.label == "env"
+    ]
+    assert item.additional_text_edits is None
+
+
+def test_the_header_row_itself_is_never_widened():
+    header = "module_name,module_step,param_1,param_2"
+    items = complete(
+        header + ",x,",
+        Position(line=0, character=len(header) + 3),
+        parse_csv_sources([("file:///w/0.csv", header)]),
+        CATALOG,
+    )
+    assert all(i.additional_text_edits is None for i in items)

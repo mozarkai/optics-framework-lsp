@@ -1,0 +1,85 @@
+{
+  "name": "optics-framework-lsp",
+  "displayName": "Optics Framework",
+  "description": "Diagnostics, completion, hover, goto-definition, rename and more for optics-framework CSV test suites",
+  "version": "1.0.0",
+  "publisher": "mozarkai",
+  "license": "Apache-2.0",
+  "repository": {
+    "url": "https://github.com/mozarkai/optics-framework-lsp"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "keywords": [
+    "optics-framework",
+    "csv",
+    "test-automation",
+    "lsp"
+  ],
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "main": "dist/extension.js",
+  "extensionDependencies": [
+    "ms-python.python"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "optics.server.restart",
+        "title": "Restart Language Server",
+        "category": "Optics"
+      }
+    ],
+    "configuration": {
+      "title": "Optics",
+      "properties": {
+        "optics.server.pythonCommand": {
+          "scope": "window",
+          "type": ["string", "null"],
+          "default": null,
+          "description": "The Python interpreter to launch the language server with. Defaults to the interpreter selected via the Python extension."
+        },
+        "optics.trace.server": {
+          "scope": "window",
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Log LSP messages sent to/from the server"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.mjs",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package --no-dependencies",
+    "pretest": "tsc -p . --outDir out",
+    "test": "vscode-test"
+  },
+  "dependencies": {
+    "@vscode/python-extension": "^1.0.6",
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22",
+    "@types/vscode": "1.82.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.1",
+    "ovsx": "^0.10.12",
+    "typescript": "^6.0.3"
+  }
+}

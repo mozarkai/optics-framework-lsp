@@ -17,13 +17,19 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
-      - name: Check the tag matches pyproject.toml
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Check the tag matches pyproject.toml and editors/code/package.json
         run: |
           tag="${GITHUB_REF_NAME#v}"
           declared=$(uv version --short)
-          echo "tag=$tag  pyproject=$declared"
-          if [ "$tag" != "$declared" ]; then
-            echo "::error::tag v$tag does not match pyproject.toml version $declared"
+          extension=$(node -p "require('./editors/code/package.json').version")
+          echo "tag=$tag  pyproject=$declared  extension=$extension"
+          if [ "$tag" != "$declared" ] || [ "$tag" != "$extension" ]; then
+            echo "::error::tag v$tag does not match pyproject.toml ($declared) and/or editors/code/package.json ($extension)"
             exit 1
           fi
 
@@ -36,11 +42,30 @@ jobs:
       - name: Build
         run: uv build
 
+      - name: Install npm dependencies
+        working-directory: editors/code
+        run: npm ci
+
+      - name: Build the bundled Python libs
+        working-directory: editors/code
+        run: make bundled/libs/.installed
+
+      - name: Package the extension
+        working-directory: editors/code
+        run: npm run package
+
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-dists
           path: dist/
+          if-no-files-found: error
+
+      - name: Upload the VSIX
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vsix
+          path: editors/code/*.vsix
           if-no-files-found: error
 
   github-release:
@@ -56,6 +81,12 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-dists
+          path: dist/
+
+      - name: Retrieve the VSIX
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: vsix
           path: dist/
 
       - name: Create the GitHub release
@@ -94,3 +125,26 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist/
+
+  vscode-marketplace:
+    runs-on: ubuntu-latest
+    needs: [github-release]
+    environment:
+      name: vscode-marketplace
+      url: https://marketplace.visualstudio.com/items?itemName=mozarkai.optics-framework-lsp
+    steps:
+      - name: Retrieve the VSIX
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: vsix
+          path: dist/
+
+      - name: Publish to the VS Code Marketplace
+        run: npx --yes @vscode/vsce@3 publish --packagePath dist/*.vsix --pat "$VSCE_PAT"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX
+        run: npx --yes ovsx@0 publish dist/*.vsix --pat "$OVSX_PAT"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}

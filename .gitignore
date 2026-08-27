@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# VS Code extension (editors/code/)
+node_modules/
+out/
+*.vsix
+editors/code/bundled/
+editors/code/requirements.txt
+editors/code/.vscode-test/

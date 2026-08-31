@@ -1,16 +1,13 @@
 src/**
 node_modules/**
-tests/**
 out/**
 .vscode-test/**
 esbuild.mjs
 tsconfig.json
-requirements.txt
 Makefile
 .vscode-test.js
 **/*.map
 **/.gitignore
 bundled/libs/.installed
 bundled/libs/.lock
-bundled/libs/bin/**
 **/__pycache__/**

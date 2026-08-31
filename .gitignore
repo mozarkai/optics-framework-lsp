@@ -219,10 +219,17 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# VS Code extension (editors/code/)
+# Editor clients (editors/)
 node_modules/
 out/
 *.vsix
+.gradle/
+editors/bundled/
 editors/code/bundled/
-editors/code/requirements.txt
+editors/requirements.txt
 editors/code/.vscode-test/
+# The Gradle plugin's downloaded IDE, plugin cache and runIde sandbox — hundreds of MB.
+editors/intellij/.intellijPlatform/
+
+# PyCharm/IntelliJ project files
+.idea/

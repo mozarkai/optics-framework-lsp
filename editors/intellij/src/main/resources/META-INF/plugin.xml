@@ -1,0 +1,31 @@
+<idea-plugin>
+  <id>ai.mozark.optics-framework-lsp</id>
+  <name>Optics Framework</name>
+  <vendor url="https://mozark.ai">Mozark</vendor>
+
+  <description><![CDATA[
+    Diagnostics, completion, hover, parameter info, goto-definition, find usages, cross-file
+    rename, structure view and semantic highlighting for
+    <a href="https://github.com/mozarkai/optics-framework">optics-framework</a> CSV test suites.
+    <p>
+    Everything is project-wide: a name defined in one CSV resolves references in every other file
+    in the project.
+    <p>
+    Requires Python 3.12 or newer on PATH, or configured under
+    <b>Settings | Tools | Optics Framework</b>. The language server's own dependencies ship inside
+    this plugin.
+  ]]></description>
+
+  <depends>com.intellij.modules.platform</depends>
+  <!-- Optional so the plugin still installs where the LSP module is absent (Android Studio); it
+       simply contributes nothing there rather than failing to load. Everything this plugin does
+       lives in optics-lsp.xml. -->
+  <depends optional="true" config-file="optics-lsp.xml">com.intellij.modules.lsp</depends>
+
+  <projectListeners>
+    <!-- Not in optics-lsp.xml: this is about which editor tab opens, and holds regardless of
+         whether the IDE has an LSP client. -->
+    <listener class="ai.mozark.optics.lsp.OpticsEditorTabListener"
+              topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+  </projectListeners>
+</idea-plugin>

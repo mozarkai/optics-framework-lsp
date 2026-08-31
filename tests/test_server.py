@@ -1,5 +1,10 @@
 import asyncio
+import json
+import queue
+import subprocess
 import sys
+import threading
+import time
 
 import pytest
 import pytest_lsp
@@ -375,3 +380,106 @@ def test_apis_are_read_from_project_yaml(tmp_path):
     files = [p for p in tmp_path.rglob("*") if p.is_file()]
     assert apis(files) == ["users.create_user", "users.get_user"]
 
+
+def _send(process, message):
+    body = json.dumps(message).encode()
+    process.stdin.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+    process.stdin.flush()
+
+
+def _reader(process, frames):
+    while True:
+        length = -1
+        while True:
+            line = process.stdout.readline()
+            if not line:
+                return
+            line = line.strip()
+            if not line:
+                break
+            if line.lower().startswith(b"content-length:"):
+                length = int(line.split(b":")[1])
+        if length < 0:
+            return
+        frames.put(json.loads(process.stdout.read(length)))
+
+
+def test_published_diagnostics_carry_the_document_version(tmp_path):
+    """
+    Without it a client cannot tell a stale result from a fresh one. IntelliJ compares this
+    against its own document version and, given none, annotates ranges past the end of a
+    document that has since shrunk.
+    """
+    for name, content in WORKSPACE.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    # Both must produce a finding: a clean file is never published, so it would prove nothing.
+    closed = tmp_path / "tests/other_cases.csv"
+    closed.write_text("test_case,test_step\nOther,Also Gone\n")
+
+    edited = tmp_path / "tests/test_cases.csv"
+    root = tmp_path.as_uri()
+
+    process = subprocess.Popen(
+        [sys.executable, "-m", "optics_framework_lsp.cli"],
+        cwd=tmp_path,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    )
+    frames: queue.Queue = queue.Queue()
+    threading.Thread(target=_reader, args=(process, frames), daemon=True).start()
+    try:
+        _send(process, {
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"processId": None, "rootUri": root, "capabilities": {},
+                       "workspaceFolders": [{"uri": root, "name": "project"}]},
+        })
+        _send(process, {"jsonrpc": "2.0", "method": "initialized", "params": {}})
+        _send(process, {
+            "jsonrpc": "2.0", "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": edited.as_uri(), "languageId": "csv",
+                                        "version": 7, "text": edited.read_text()}},
+        })
+
+        # Validation also runs on `initialized`, before anything is open, so keep the latest
+        # value per uri rather than the first.
+        seen: dict[str, object] = {}
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and seen.get(edited.as_uri()) != 7:
+            try:
+                frame = frames.get(timeout=1)
+            except queue.Empty:
+                continue
+            if frame.get("method") == "textDocument/publishDiagnostics":
+                seen[frame["params"]["uri"]] = frame["params"].get("version")
+
+        assert seen.get(edited.as_uri()) == 7, seen
+        # A file nobody opened has no version to report, and must not borrow the open one's.
+        assert closed.as_uri() in seen, seen
+        assert seen[closed.as_uri()] is None, seen
+    finally:
+        process.kill()
+
+
+def test_diagnostic_ranges_stay_inside_the_document():
+    """
+    A range ending at the start of the next line is off the end of a file with no trailing
+    newline, and sits exactly at EOF even when there is one — IntelliJ throws on both.
+    """
+    from optics_framework_lsp.server import _range
+    from optics_framework_lsp.validation import Finding
+
+    lines = ["test_case,test_step", "TC,Login", "TC,Gone"]
+    on_last = Finding(severity=1, code="module-not-found", message="", row=3)
+    found = _range(on_last, lines)
+    assert (found.start.line, found.start.character) == (2, 0)
+    assert (found.end.line, found.end.character) == (2, len("TC,Gone"))
+
+    # Nothing may point past the last line, whatever row the engine reported.
+    beyond = _range(Finding(severity=1, code="x", message="", row=99), lines)
+    assert beyond.end.line == len(lines) - 1
+
+    empty = _range(on_last, [])
+    assert (empty.start.line, empty.start.character) == (0, 0)
+    assert (empty.end.line, empty.end.character) == (0, 0)

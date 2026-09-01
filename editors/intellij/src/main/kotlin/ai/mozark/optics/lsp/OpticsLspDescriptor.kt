@@ -2,9 +2,7 @@ package ai.mozark.optics.lsp
 
 import com.intellij.codeInsight.intention.IntentionAction
 import com.intellij.execution.configurations.GeneralCommandLine
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.lang.annotation.AnnotationHolder
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
@@ -62,21 +60,9 @@ class OpticsLspDescriptor(project: Project, private val python: Path) :
             super.createAnnotation(holder, diagnostic, clamped, quickFixes)
         }
     }
-
-    private companion object {
-        val PLUGIN_ID: PluginId = PluginId.getId("ai.mozark.optics-framework-lsp")
-
-        /** `-S` keeps site-packages out, so this is the only importable tree — which is what makes
-         * borrowing an arbitrary interpreter safe. */
-        val bundledLibs: Path by lazy {
-            checkNotNull(PluginManagerCore.getPlugin(PLUGIN_ID)) { "plugin descriptor missing" }
-                .pluginPath.resolve("bundled/libs")
-        }
-
-        fun pythonPath(): String {
-            val existing = EnvironmentUtil.getValue("PYTHONPATH")
-            return if (existing.isNullOrEmpty()) bundledLibs.toString()
-            else bundledLibs.toString() + File.pathSeparator + existing
-        }
-    }
 }
+
+private fun pythonPath(): String = listOfNotNull(
+    OpticsLspIntegrationProvider.bundledLibs.toString(),
+    EnvironmentUtil.getValue("PYTHONPATH")?.ifEmpty { null },
+).joinToString(File.pathSeparator)

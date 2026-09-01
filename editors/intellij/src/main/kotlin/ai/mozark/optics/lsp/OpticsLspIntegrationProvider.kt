@@ -4,15 +4,23 @@ import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.extensions.PluginAware
+import com.intellij.openapi.extensions.PluginDescriptor
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.lsp.api.LspClientManager
 import com.intellij.platform.lsp.api.LspIntegrationProvider
+import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
-class OpticsLspIntegrationProvider : LspIntegrationProvider {
+class OpticsLspIntegrationProvider : LspIntegrationProvider, PluginAware {
+
+    // Every PluginManager descriptor getter is @Internal from 2026.2; the platform injects this.
+    override fun setPluginDescriptor(pluginDescriptor: PluginDescriptor) {
+        pluginPath = pluginDescriptor.pluginPath
+    }
 
     override fun fileOpened(
         project: Project,
@@ -79,6 +87,15 @@ class OpticsLspIntegrationProvider : LspIntegrationProvider {
     companion object {
         private val probing = AtomicBoolean(false)
         private val warned = ConcurrentHashMap.newKeySet<String>()
+
+        @Volatile
+        private var pluginPath: Path? = null
+
+        /** `-S` keeps site-packages out, so this is the only importable tree — which is what
+         * makes borrowing an arbitrary interpreter safe. */
+        val bundledLibs: Path
+            get() = checkNotNull(pluginPath) { "plugin descriptor not injected" }
+                .resolve("bundled/libs")
 
         fun resetWarnings() = warned.clear()
     }

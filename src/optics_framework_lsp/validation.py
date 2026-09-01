@@ -208,6 +208,12 @@ def module_args(step_name: str | None, count: int) -> set[int]:
     return set()
 
 
+def runs_at(step_name: str | None, count: int) -> set[int]:
+    """As `module_args`, plus a `Condition`'s own condition slots: each runs a module to
+    ask whether it passed."""
+    return set(range(count)) if slug(step_name) == "condition" else module_args(step_name, count)
+
+
 def module_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
     """Every place a module is named: a test case step, or a param that runs one."""
     for test_case in ast.test_cases:

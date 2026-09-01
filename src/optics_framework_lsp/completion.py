@@ -25,13 +25,16 @@ from lsprotocol.types import (
 
 from .keyword_catalog import Catalog, Keyword, slug
 from .parser.ast import AST
+from .parser.csv_parser import filled_params
 from .validation import (
     VAR,
     declarations,
     declared,
+    declares_at,
     element_refs,
     module_conditions,
     module_refs,
+    runs_at,
     undefined,
 )
 
@@ -373,13 +376,26 @@ def _symbol_at(cursor: Cursor, catalog: Catalog | None) -> tuple[str, str] | Non
         # A keyword beats a same-named module here, as `_execute_single_keyword` resolves.
         return ("keyword" if slug(field) in (catalog or {}) else "module"), field
 
+    return param_symbol(cursor, step)
+
+
+def param_symbol(cursor: Cursor, step: int) -> tuple[str, str] | None:
+    """What a param cell names, shared with `rename` so a binding cell resolves the same
+    either way. Indexed by filled params, as the runner reads them: a blank holds no place."""
+    field = cursor.field(cursor.column)
     if names := VAR.findall(field):
         return "element", names[0]
 
-    kind = PARAM_KINDS.get(cursor.step_name(step), {}).get(cursor.column - step - 1)
-    if kind in ("file", "api"):
-        return kind, field
-    return "module", field.removeprefix("!")
+    filled = filled_params(cursor.fields, cursor.headers)
+    param = filled.index(cursor.column) if cursor.column in filled else -1
+    name = cursor.step_name(step)
+
+    if param in declares_at(name, len(filled)):
+        return "element", field
+    if param in runs_at(name, len(filled)):
+        return "module", field.removeprefix("!")
+    kind = PARAM_KINDS.get(name, {}).get(param)
+    return (kind, field) if kind else None
 
 
 def references(

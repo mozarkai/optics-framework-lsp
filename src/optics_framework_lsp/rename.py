@@ -7,10 +7,10 @@ from collections.abc import Iterable, Iterator
 
 from lsprotocol.types import Position, Range, TextEdit
 
-from .completion import Cursor
+from .completion import Cursor, param_symbol
 from .keyword_catalog import Catalog, slug
 from .parser.csv_parser import filled_params, sheet, spans
-from .validation import VAR, declares_at, module_args
+from .validation import VAR, declares_at, runs_at
 
 _Place = tuple[str, int, int, int]
 
@@ -47,24 +47,9 @@ def _symbol(cursor: Cursor, catalog: Catalog | None) -> tuple[str, str] | None:
         # A keyword is the framework's, so only a nested module call is renameable.
         return None if slug(field) in (catalog or {}) else ("module", field)
 
-    if names := VAR.findall(field):
-        return "element", names[0]
-
-    # Anything that is neither a bound name nor a module we run — a data file, an api
-    # identifier, a plain value — names nothing we own.
-    filled = filled_params(cursor.fields, cursor.headers)
-    param = filled.index(cursor.column) if cursor.column in filled else -1
-    if param in declares_at(cursor.step_name(step), len(filled)):
-        return "element", field
-    if param in _runs(cursor.step_name(step), len(filled)):
-        return "module", field.removeprefix("!")
-    return None
-
-
-def _runs(step: str, count: int) -> set[int]:
-    """Which params name a module to run. A `Condition` may in any slot: a target runs
-    one, and a condition runs one to ask whether it passed."""
-    return set(range(count)) if slug(step) == "condition" else module_args(step, count)
+    # A data file or api identifier names something outside the csvs, so not ours.
+    found = param_symbol(cursor, step)
+    return found if found and found[0] in ("element", "module") else None
 
 
 def _in_row(
@@ -76,7 +61,7 @@ def _in_row(
     step = fields[step_at] if step_at is not None and step_at < len(fields) else ""
 
     filled = filled_params(fields, headers)
-    runs = _runs(step, len(filled))
+    runs = runs_at(step, len(filled))
     binds = declares_at(step, len(filled))
 
     for column, (start, end) in enumerate(places):

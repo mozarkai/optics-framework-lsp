@@ -26,6 +26,7 @@ MODULES = (
     "Guard,Condition,!Do Login,Open App\n"          # 8
     "Extra,Condition,${x} == 1,Open App,Do Login\n" # 9
     "Launch App,Launch App,,\n"                     # 10
+    "Loop,Run Loop,Extra,runner,${names}\n"         # 11
 )
 MORE = (
     "module_name,module_step,param_1\n"
@@ -38,6 +39,7 @@ ELEMENTS = (
     "login_btn,//a,\n"                              # 2
     "login_btn,login_btn.png,\n"                    # 3
     "other,//b,login_btn.png\n"                     # 4
+    "runner,//c,\n"                                 # 5
 )
 ERRORS = "error_code,match_string\nE001,Crashed\n"
 
@@ -46,6 +48,7 @@ CATALOG = {
     "launch app": Keyword(0, False, []),
     "read data": Keyword(2, False, ["input_element", "file_path"]),
     "invoke api": Keyword(1, False, ["api_identifier"]),
+    "run loop": Keyword(1, True, ["target"]),
 }
 
 
@@ -195,3 +198,10 @@ def test_an_error_code_has_no_references():
 
 def test_the_header_row_references_nothing():
     assert _refs(M, MODULES, 1, "module_step") == []
+
+
+def test_a_run_loop_variable_resolves_from_the_cell_that_binds_it():
+    # Reading it as a module name returned nothing; rename from the same cell worked.
+    both = [("elements.csv", 5), ("modules.csv", 11)]
+    assert sorted(_refs(M, MODULES, 11, "runner", declaration=True)) == both
+    assert sorted(_refs(E, ELEMENTS, 5, "runner", declaration=True)) == both

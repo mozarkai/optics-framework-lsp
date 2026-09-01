@@ -28,6 +28,16 @@ Or from a checkout, for development:
 uv sync
 ```
 
+### In an editor
+
+Two packaged clients bundle the server's dependencies, so neither needs the steps above:
+
+- **VS Code** — [`editors/code`](editors/code/README.md)
+- **IntelliJ, PyCharm and other JetBrains IDEs** — [`editors/intellij`](editors/intellij/README.md)
+
+Both need a Python 3.12+ interpreter and attach to every `*.csv` in the project without claiming
+the `.csv` extension, so whatever CSV editor you already use is untouched.
+
 ---
 
 # The linter

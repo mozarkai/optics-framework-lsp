@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import yaml
@@ -66,13 +67,20 @@ def data_files(root: str | None, files: list[Path], ast: AST) -> list[str]:
     )
 
 
-def _diagnostic(finding: Finding) -> types.Diagnostic:
+def _range(finding: Finding, lines: list[str]) -> types.Range:
+    """The finding's whole row. Ending at the next line's start is past EOF on the last row,
+    and IntelliJ refuses to annotate a range outside the document."""
+    line = min(finding.line, max(len(lines) - 1, 0))
+    return types.Range(
+        start=types.Position(line=line, character=0),
+        end=types.Position(line=line, character=len(lines[line]) if lines else 0),
+    )
+
+
+def _diagnostic(finding: Finding, lines: list[str]) -> types.Diagnostic:
     """A `Finding` on the wire. The engine stays protocol-free; the range is built here."""
     return types.Diagnostic(
-        range=types.Range(
-            start=types.Position(line=finding.line, character=0),
-            end=types.Position(line=finding.line + 1, character=0),
-        ),
+        range=_range(finding, lines),
         message=finding.message,
         severity=types.DiagnosticSeverity(finding.severity),
         code=finding.code,
@@ -80,9 +88,16 @@ def _diagnostic(finding: Finding) -> types.Diagnostic:
     )
 
 
+# Read from the package rather than keeping a fourth copy of the version.
+try:
+    _VERSION = version("optics-framework-lsp")
+except PackageNotFoundError:  # pragma: no cover - only when run from a bare source tree
+    _VERSION = "0+unknown"
+
+
 class OpticsLanguageServer(LanguageServer):
     def __init__(self) -> None:
-        super().__init__("optics-lsp", "0.1.0")
+        super().__init__("optics-lsp", _VERSION)
         # Files we last published to per folder, so fixed problems clear in the editor
         # without one folder wiping another's diagnostics.
         self._published: defaultdict[str, set[str]] = defaultdict(set)
@@ -105,33 +120,45 @@ class OpticsLanguageServer(LanguageServer):
 
     def sources(self, files: list[Path]) -> list[tuple[str, str]]:
         """Every csv among `files`, with open buffers overriding what is on disk."""
-        sources = []
+        return [(uri, text) for uri, text, _ in self.snapshot(files)]
+
+    def snapshot(self, files: list[Path]) -> list[tuple[str, str, int | None]]:
+        """As `sources`, plus each text's document version — captured together, or a client
+        cannot tell a stale publish from a fresh one."""
+        snapshot = []
         for path in files:
             if path.suffix != ".csv":
                 continue
 
             uri = path.as_uri()
             document = self.workspace.text_documents.get(uri)
-            sources.append(
-                (uri, document.source if document else path.read_text(errors="replace"))
-            )
-        return sources
+            if document is None:
+                snapshot.append((uri, path.read_text(errors="replace"), None))
+            else:
+                snapshot.append((uri, document.source, document.version))
+        return snapshot
 
     def validate_folder(self, folder_uri: str) -> None:
+        snapshot = {uri: (text, v) for uri, text, v in self.snapshot(self.files(folder_uri))}
         found = validate(
-            parse_csv_sources(self.sources(self.files(folder_uri))),
+            parse_csv_sources([(uri, text) for uri, (text, _) in snapshot.items()]),
             CATALOG,
         )
 
         for uri in self._published[folder_uri] - found.keys():
             self.text_document_publish_diagnostics(
-                types.PublishDiagnosticsParams(uri=uri, diagnostics=[])
+                types.PublishDiagnosticsParams(
+                    uri=uri, diagnostics=[], version=snapshot.get(uri, (None, None))[1]
+                )
             )
 
         for uri, findings in found.items():
+            text, version = snapshot.get(uri, ("", None))
             self.text_document_publish_diagnostics(
                 types.PublishDiagnosticsParams(
-                    uri=uri, diagnostics=[_diagnostic(f) for f in findings]
+                    uri=uri,
+                    diagnostics=[_diagnostic(f, text.splitlines()) for f in findings],
+                    version=version,
                 )
             )
 

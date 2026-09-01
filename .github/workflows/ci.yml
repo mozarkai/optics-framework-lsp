@@ -33,3 +33,76 @@ jobs:
       # Catching a broken sdist or wheel here
       - name: Build
         run: uv build
+
+  vsix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Install npm dependencies
+        working-directory: editors/code
+        run: npm ci
+
+      - name: Build the bundled Python libs
+        working-directory: editors/code
+        run: make bundled/libs/.installed
+
+      - name: Package the extension
+        working-directory: editors/code
+        run: npm run package
+
+      # The extension host is a real VS Code window and needs a display. xvfb-run is
+      # preinstalled on ubuntu-latest.
+      - name: Run the extension test
+        working-directory: editors/code
+        run: xvfb-run -a npm test
+
+      - name: Upload the VSIX
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vsix
+          path: editors/code/*.vsix
+          if-no-files-found: error
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+      - name: Build the bundled Python libs
+        run: make -C editors bundled/libs/.installed
+
+      # verifyPlugin is the one that matters: it catches the optional-dependency split being
+      # wrong, i.e. the plugin failing to load on an IDE with no LSP module.
+      - name: Build and verify the plugin
+        working-directory: editors/intellij
+        run: ./gradlew --no-daemon check buildPlugin verifyPlugin
+
+      - name: Upload the plugin
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plugin
+          path: editors/intellij/build/distributions/*.zip
+          if-no-files-found: error

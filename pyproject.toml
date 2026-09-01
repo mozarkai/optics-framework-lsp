@@ -8,11 +8,13 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Bishwa Bhusan Saha", email = "77796630+kun-codes@users.noreply.github.com" }
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 keywords = ["lsp", "language-server", "optics-framework", "linter", "test-automation", "csv"]
 classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",

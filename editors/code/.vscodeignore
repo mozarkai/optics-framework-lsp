@@ -1,0 +1,13 @@
+src/**
+node_modules/**
+out/**
+.vscode-test/**
+esbuild.mjs
+tsconfig.json
+Makefile
+.vscode-test.js
+**/*.map
+**/.gitignore
+bundled/libs/.installed
+bundled/libs/.lock
+**/__pycache__/**

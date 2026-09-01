@@ -1,0 +1,17 @@
+<idea-plugin>
+  <extensions defaultExtensionNs="com.intellij">
+    <platform.lsp.integrationProvider
+        implementation="ai.mozark.optics.lsp.OpticsLspIntegrationProvider"/>
+    <applicationConfigurable id="ai.mozark.optics" parentId="tools"
+                             displayName="Optics Framework"
+                             instance="ai.mozark.optics.lsp.OpticsConfigurable"/>
+    <notificationGroup id="Optics" displayType="BALLOON"/>
+  </extensions>
+
+  <actions>
+    <action id="optics.server.restart" class="ai.mozark.optics.lsp.RestartServerAction"
+            text="Restart Optics Language Server">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+    </action>
+  </actions>
+</idea-plugin>

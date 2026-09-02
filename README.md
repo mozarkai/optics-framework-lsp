@@ -268,6 +268,27 @@ Login             [Function]  1 step
 </details>
 
 <details>
+<summary><b>Workspace symbols</b></summary>
+
+Every name the project declares, searchable from anywhere — "Go to Symbol in Workspace" in
+VS Code, `workspace/symbol` on the wire. Declarations only: a module's steps and an element's
+locators belong to the file outline, and repeating them here would bury the handful of names
+being searched for under every row that mentions them.
+
+| kind | what it is |
+| --- | --- |
+| `Class` | a test case |
+| `Function` | a module |
+| `Variable` | an element, once, however many locator rows it has |
+| `Constant` | an error code |
+
+The match is a case-insensitive substring, and each result carries the kind its file's header
+row made it (`modules`, `test_cases`, …) as the container, since that is the only thing telling
+a module from a test case of the same name.
+
+</details>
+
+<details>
 <summary><b>Semantic tokens</b></summary>
 
 Highlighting a CSV grammar cannot express, because the meaning of a cell depends on the column

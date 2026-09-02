@@ -1,7 +1,8 @@
 # Optics Framework
 
-Diagnostics, completion, hover, goto-definition, references, rename and semantic highlighting
-for [optics-framework](https://github.com/mozarkai/optics-framework) CSV test suites, powered
+Diagnostics, completion, hover, goto-definition, references, rename, workspace symbol search
+and semantic highlighting for
+[optics-framework](https://github.com/mozarkai/optics-framework) CSV test suites, powered
 by [`optics-framework-lsp`](https://github.com/mozarkai/optics-framework-lsp).
 
 Everything is project-wide: a name defined in one CSV resolves references in every other file

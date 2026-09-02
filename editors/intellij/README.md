@@ -14,7 +14,7 @@ without it (Android Studio) the plugin installs and contributes nothing rather t
 
 ## Why the floor is 2026.1.4
 
-The server speaks fifteen standard LSP methods, but the platform's LSP client grew into them over
+The server speaks sixteen standard LSP methods, but the platform's LSP client grew into them over
 several releases. Anything below the floor does not degrade visibly — the feature is simply never
 requested, and the server sits there answering nobody. From
 [the SDK docs](https://plugins.jetbrains.com/docs/intellij/language-server-protocol.html):
@@ -26,6 +26,7 @@ requested, and the server sits there answering nobody. From
 | Find usages | `references` | 2024.2 |
 | Semantic highlighting | `semanticTokens/full` | 2024.2.2 |
 | Structure, breadcrumbs, go-to-symbol | `documentSymbol` | 2025.3 |
+| Go to symbol across the project | `workspace/symbol` | 2025.3 |
 | Parameter info | `signatureHelp` | 2025.3 |
 | Rename refactoring | `rename`, `prepareRename` | **2026.1.1** (261.23567.138) |
 

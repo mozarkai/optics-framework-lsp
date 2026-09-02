@@ -1,7 +1,7 @@
 from lsprotocol.types import SymbolKind
 
 from optics_framework_lsp.parser.csv_parser import parse_csv_sources
-from optics_framework_lsp.symbols import symbols
+from optics_framework_lsp.symbols import symbols, workspace_symbols
 
 TESTS = "test_case,test_step\nTC One,Login\nTC One,Check\nTC Two,Login\n"
 MODULES = "module_name,module_step,param_1,param_2\nLogin,Press Element,${btn},\nLogin,Enter Text,${f},admin\nCheck,Sleep,1,\n"
@@ -98,3 +98,54 @@ def test_a_quoted_cell_with_padding_is_measured_from_its_text():
     (element,) = _outline("Element_Name,Element_ID,Element_ID_2\n" + row)
     spans = [(c.range.start.character, c.range.end.character) for c in element.children]
     assert [row[a:b] for a, b in spans] == ['"[""00"",""01""]"', "btn.png"]
+
+
+def _found(query: str):
+    """The whole project, not one file: `workspace/symbol` has no document to start from."""
+    ast = parse_csv_sources(
+        [
+            ("file:///w/test_cases/test_cases.csv", TESTS),
+            ("file:///w/modules/modules.csv", MODULES),
+            ("file:///w/elements/elements.csv", ELEMENTS),
+        ]
+    )
+    return [
+        (s.name, s.kind, s.container_name, s.location.uri, s.location.range.start.line)
+        for s in workspace_symbols(ast, query)
+    ]
+
+
+def test_the_match_is_a_case_insensitive_substring():
+    # A caller types what it remembers, which is rarely the whole name in the right case.
+    assert _found("login") == [
+        ("Login", SymbolKind.Function, "modules", "file:///w/modules/modules.csv", 1),
+    ]
+    assert [name for name, *_ in _found("tc")] == ["TC One", "TC Two"]
+    assert [name for name, *_ in _found("FIELD")] == ["field"]
+
+
+def test_an_empty_query_is_every_declaration():
+    assert [name for name, *_ in _found("")] == [
+        "TC One",
+        "TC Two",
+        "Login",
+        "Check",
+        "btn",
+        "field",
+    ]
+
+
+def test_an_element_repeated_for_its_fallbacks_is_one_symbol():
+    # `btn` has two locator rows. `read_elements` reads one element, so we report one.
+    assert _found("btn") == [
+        ("btn", SymbolKind.Variable, "elements", "file:///w/elements/elements.csv", 1),
+    ]
+
+
+def test_an_error_code_is_a_symbol():
+    codes = "error_code,match_string\nAPP_CRASH,has stopped\n,orphaned\n"
+    ast = parse_csv_sources([("file:///w/error_definitions.csv", codes)])
+    # The blank code is a row validation reports, not a name anything can search for.
+    assert [(s.name, s.kind) for s in workspace_symbols(ast, "")] == [
+        ("APP_CRASH", SymbolKind.Constant)
+    ]

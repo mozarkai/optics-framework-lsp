@@ -312,6 +312,20 @@ a module of the same shape, which they would otherwise draw identically.
 
 ---
 
+## AI agents
+
+The VS Code extension also offers the server over
+[MCP](https://modelcontextprotocol.io), so an AI agent can ask it the same questions the editor
+does, across the whole project rather than only the open files. Nothing to configure: it appears
+under **MCP Servers** once the extension is installed. The bridge is
+[`mcpls`](https://github.com/bug-ops/mcpls), downloaded when first needed. See
+[`editors/code`](editors/code/README.md).
+
+For anything with a shell, `optics-lsp lint . --json` gives an agent every finding in one call
+and needs no bridge.
+
+---
+
 ## The keyword catalog
 
 `src/optics_framework_lsp/keywords.py` is generated and holds **49 keywords from

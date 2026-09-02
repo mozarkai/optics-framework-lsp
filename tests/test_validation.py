@@ -231,13 +231,21 @@ def _codes(modules: str, catalog=None):
     return [d.code for d in found.get("file:///w/m.csv", [])]
 
 
-def test_extra_spaces_in_a_keyword_are_not_an_error():
-    """`_execute_single_keyword` collapses whitespace, so the runner accepts these."""
+def test_keyword_spelling_variants_are_not_an_error():
+    """`_execute_single_keyword` collapses whitespace and keys `keyword_map` by the Python
+    method names, so the runner accepts every one of these."""
     from optics_framework_lsp.keyword_catalog import Keyword
 
     catalog = {"press element": Keyword(required=1, variadic=False, params=["element"])}
-    for step in ("Press Element", "Press  Element", "press element", "PRESS ELEMENT"):
+    for step in ("Press Element", "Press  Element", "press element", "PRESS ELEMENT",
+                 "press_element", "Press_Element", "PRESS_ELEMENT"):
         assert _codes(SPACED + f"M,{step},x\n", catalog) == [], step
+
+
+def test_the_underscore_form_still_resolves_its_module_params():
+    # run_loop went unrecognised, so module_args was empty and this typo went unreported.
+    modules = SPACED + "M,run_loop,Type One Nmae,name\n"
+    assert "module-not-found" in _codes(modules, CATALOG)
 
 
 def test_extra_spaces_do_not_hide_a_declaration():

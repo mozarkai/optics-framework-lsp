@@ -29,9 +29,10 @@ Catalog = dict[str, Keyword]
 
 
 def slug(name: str | None) -> str:
-    """A step name as `_execute_single_keyword` resolves it: whitespace collapsed and
-    lowercased. Module names are not — those it looks up raw."""
-    return " ".join((name or "").split()).lower()
+    """A step name as `_execute_single_keyword` resolves it. Whitespace and underscores
+    both collapse: `keyword_map` is keyed by the Python method names, so `press_element`
+    and `Press Element` are one keyword. Module names it looks up raw."""
+    return " ".join((name or "").replace("_", " ").split()).lower()
 
 
 # Copied out of the table so a caller mutating a Keyword cannot corrupt it.

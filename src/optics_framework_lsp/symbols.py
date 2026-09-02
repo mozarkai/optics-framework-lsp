@@ -1,9 +1,17 @@
 # The outline of one csv: the test cases, modules or elements it defines, and the rows
-# that make each of them up.
+# that make each of them up. `workspace_symbols` is the same names across a whole project,
+# flat and searchable, for a caller that has no file in hand.
 
 from __future__ import annotations
 
-from lsprotocol.types import DocumentSymbol, Position, Range, SymbolKind
+from lsprotocol.types import (
+    DocumentSymbol,
+    Location,
+    Position,
+    Range,
+    SymbolKind,
+    WorkspaceSymbol,
+)
 
 from .parser.ast import AST, Block, Element
 
@@ -97,3 +105,49 @@ def symbols(ast: AST) -> list[DocumentSymbol]:
         for error in ast.error_definitions
         if error.code
     ]
+
+
+def workspace_symbols(ast: AST, query: str) -> list[WorkspaceSymbol]:
+    """Every name the project declares, for `workspace/symbol`.
+
+    Declarations only. Steps and locators are in the per-file outline, and including them
+    here would bury the handful of names a caller is searching for under every row that
+    mentions them.
+    """
+    wanted = query.strip().lower()
+
+    # Keyed to collapse an element repeated across rows for its fallback locators — which
+    # `read_elements` treats as one element — into the row that first declares it.
+    found: dict[tuple[str, str], WorkspaceSymbol] = {}
+
+    def add(name: str, kind: SymbolKind, uri: str, row: int) -> None:
+        if not name or wanted not in name.lower():
+            return
+        at = Position(line=max(row - 1, 0), character=0)
+        found.setdefault(
+            (name, uri),
+            WorkspaceSymbol(
+                name=name,
+                kind=kind,
+                # The kind the header row made the file. It is the only place a caller can
+                # be told a module from a test case: WorkspaceSymbol has no `detail`.
+                container_name=ast.kinds.get(uri),
+                location=Location(uri=uri, range=Range(start=at, end=at)),
+            ),
+        )
+
+    # The same kinds as the outline above, so a client showing both does not label one
+    # thing two ways.
+    for block in ast.test_cases:
+        add(block.name, SymbolKind.Class, block.uri, block.start_row)
+
+    for block in ast.modules:
+        add(block.name, SymbolKind.Function, block.uri, block.start_row)
+
+    for element in ast.elements:
+        add(element.name, SymbolKind.Variable, element.uri, element.row)
+
+    for error in ast.error_definitions:
+        add(error.code, SymbolKind.Constant, error.uri, error.row)
+
+    return list(found.values())

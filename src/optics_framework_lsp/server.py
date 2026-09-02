@@ -16,7 +16,7 @@ from .parser.ast import AST
 from .keyword_catalog import CATALOG
 from .parser.csv_parser import parse_csv_sources
 from . import rename as renaming
-from .symbols import symbols
+from .symbols import symbols, workspace_symbols
 from .tokens import LEGEND, MODIFIERS, tokens
 from .validation import Finding, SOURCE, validate
 
@@ -278,6 +278,19 @@ def document_symbols(
     # One file's outline, so the rest of the workspace is not parsed.
     uri = params.text_document.uri
     return symbols(parse_csv_sources([(uri, ls.workspace.get_text_document(uri).source)]))
+
+
+@server.feature(types.WORKSPACE_SYMBOL)
+def workspace_symbol(
+    ls: OpticsLanguageServer, params: types.WorkspaceSymbolParams
+) -> list[types.WorkspaceSymbol]:
+    # Every folder: unlike the other features there is no document to locate one from.
+    found: list[types.WorkspaceSymbol] = []
+    for folder in ls.workspace.folders:
+        found += workspace_symbols(
+            parse_csv_sources(ls.sources(ls.files(folder))), params.query
+        )
+    return found
 
 
 @server.feature(types.TEXT_DOCUMENT_HOVER)

@@ -1,7 +1,7 @@
 {
   "name": "optics-framework-lsp",
   "displayName": "Optics Framework",
-  "description": "Diagnostics, completion, hover, goto-definition, rename and more for optics-framework CSV test suites",
+  "description": "Diagnostics, completion, hover, goto-definition, rename, workspace symbols and an MCP server for AI agents, for optics-framework CSV test suites",
   "version": "1.0.0",
   "publisher": "mozarkai",
   "license": "Apache-2.0",
@@ -19,7 +19,7 @@
     "lsp"
   ],
   "engines": {
-    "vscode": "^1.82.0"
+    "vscode": "^1.101.0"
   },
   "main": "dist/extension.js",
   "extensionDependencies": [
@@ -56,9 +56,27 @@
           "enum": ["off", "messages", "verbose"],
           "default": "off",
           "description": "Log LSP messages sent to/from the server"
+        },
+        "optics.mcp.enabled": {
+          "scope": "window",
+          "type": "boolean",
+          "default": true,
+          "description": "Offer the language server to AI agents as an MCP server. The mcpls bridge is downloaded on first use."
+        },
+        "optics.mcp.binaryPath": {
+          "scope": "window",
+          "type": ["string", "null"],
+          "default": null,
+          "description": "The mcpls binary to bridge with. Set this to skip the download, for a network that cannot reach GitHub."
         }
       }
-    }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "optics.mcpls",
+        "label": "Optics Framework"
+      }
+    ]
   },
   "scripts": {
     "compile": "node esbuild.mjs",
@@ -74,7 +92,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^22",
-    "@types/vscode": "1.82.0",
+    "@types/vscode": "1.101.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.2",

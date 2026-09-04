@@ -7,6 +7,7 @@ import {
   LanguageClientOptions,
   TextDocumentFilter,
 } from 'vscode-languageclient/node';
+import * as mcp from './mcp';
 
 const MIN_PYTHON: [number, number] = [3, 12];
 const SELECTOR: TextDocumentFilter[] = [{ scheme: 'file', pattern: '**/*.csv' }];
@@ -24,12 +25,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   context.subscriptions.push(
+    mcp.register(context),
     vscode.commands.registerCommand('optics.server.restart', () => restart(context)),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('optics.server')) {
         restart(context);
       }
-    })
+    }),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => mcp.refresh())
   );
 
   if (python) {
@@ -53,6 +56,9 @@ async function restart(context: vscode.ExtensionContext): Promise<void> {
 
 async function start(context: vscode.ExtensionContext): Promise<void> {
   const serverOptions = await resolveServerOptions(context);
+  // Both clients launch the server the same way, so the MCP bridge reuses what was resolved
+  // here instead of resolving it again and reporting the same failure twice.
+  mcp.relaunch(serverOptions);
   if (!serverOptions) {
     return;
   }

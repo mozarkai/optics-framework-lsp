@@ -5,12 +5,20 @@
     <applicationConfigurable id="ai.mozark.optics" parentId="tools"
                              displayName="Optics Framework"
                              instance="ai.mozark.optics.lsp.OpticsConfigurable"/>
-    <notificationGroup id="Optics" displayType="BALLOON"/>
+    <!-- Sticky: the one-shot MCP offer is shown once per machine, and a balloon that fades
+         during indexing is an offer the user never sees again. -->
+    <notificationGroup id="Optics" displayType="STICKY_BALLOON"/>
+    <postStartupActivity implementation="ai.mozark.optics.lsp.OfferMcpSetupActivity"/>
   </extensions>
 
   <actions>
     <action id="optics.server.restart" class="ai.mozark.optics.lsp.RestartServerAction"
             text="Restart Optics Language Server">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+    </action>
+    <action id="optics.mcp.configure" class="ai.mozark.optics.lsp.ConfigureMcpAction"
+            text="Configure Optics MCP Server"
+            description="Fetch the agent-lsp bridge, register it with the AI agents on this machine, and copy an MCP client entry to the clipboard">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>
   </actions>

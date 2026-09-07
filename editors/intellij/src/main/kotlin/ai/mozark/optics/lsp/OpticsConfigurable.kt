@@ -18,6 +18,15 @@ class OpticsConfigurable : BoundConfigurable("Optics Framework") {
                         "Python 3.12 or newer is required."
                 )
         }
+        row("MCP bridge binary:") {
+            textField()
+                .bindText(OpticsSettings.getInstance()::bridgePath)
+                .align(AlignX.FILL)
+                .comment(
+                    "agent-lsp, which offers the server to AI agents. Leave empty to download it " +
+                        "when Tools | Configure Optics MCP Server is first used."
+                )
+        }
     }
 
     override fun apply() {

@@ -91,11 +91,25 @@ class OpticsLspIntegrationProvider : LspIntegrationProvider, PluginAware {
         @Volatile
         private var pluginPath: Path? = null
 
+        /**
+         * Touching the extension point is what constructs us, and so what injects the descriptor.
+         * Nothing has until a CSV is opened, which a project being started from scratch has none
+         * of — and that is exactly when the MCP action is wanted.
+         */
+        private val pluginDir: Path
+            get() = pluginPath ?: run {
+                LspIntegrationProvider.EP_NAME.extensionList
+                checkNotNull(pluginPath) { "plugin descriptor not injected" }
+            }
+
         /** `-S` keeps site-packages out, so this is the only importable tree — which is what
          * makes borrowing an arbitrary interpreter safe. */
         val bundledLibs: Path
-            get() = checkNotNull(pluginPath) { "plugin descriptor not injected" }
-                .resolve("bundled/libs")
+            get() = pluginDir.resolve("bundled/libs")
+
+        /** The agent skill, one copy shared with the VS Code extension. See `editors/skills`. */
+        val skillFile: Path
+            get() = pluginDir.resolve("skills/optics-framework/SKILL.md")
 
         fun resetWarnings() = warned.clear()
     }

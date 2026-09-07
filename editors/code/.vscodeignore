@@ -11,3 +11,4 @@ Makefile
 bundled/libs/.installed
 bundled/libs/.lock
 **/__pycache__/**
+skills/.installed

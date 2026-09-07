@@ -38,6 +38,17 @@ against the deprecated `Lsp*Server*` names for no feature gain.
 
 Note the build numbers rather than a bare `261`: 2026.1 itself is 261.22158.277 and has neither.
 
+## AI agents
+
+**Tools | Configure Optics MCP Server** offers the server to an AI agent over MCP, so it can ask
+about the whole project rather than only the open files. The bridge is
+[`agent-lsp`](https://github.com/blackwell-systems/agent-lsp), downloaded on first use; set a
+binary under **Settings | Tools | Optics Framework** to skip that.
+
+The IDE has no extension point for registering an MCP server, so the action writes AI Assistant's
+and Claude Code's own config, copies an entry to the clipboard for anything else, and offers to
+install a skill telling the agent where the optics documentation is.
+
 ## Building
 
 `bundled/libs` is produced once for every editor client and is not checked in:

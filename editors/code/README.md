@@ -11,6 +11,7 @@ within one.
 
 ## Requirements
 
+- VS Code 1.101 or newer, for the MCP API below.
 - The [Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python),
   with an interpreter selected (Python 3.12+).
 
@@ -20,16 +21,29 @@ extension.
 The server attaches to every `*.csv` file in the workspace. Files that are not optics suites
 produce no diagnostics, because the parser classifies each file by its header row.
 
+## AI agents
+
+The extension also offers the server over MCP, so an agent can ask it about the whole project
+rather than only the open files. It appears under **MCP Servers**, and Copilot needs no setup. The
+bridge is [`agent-lsp`](https://github.com/blackwell-systems/agent-lsp), downloaded on first use.
+
+Claude Code reads its own config, so for that one run **Optics: Configure MCP Server for Claude
+Code** and pick global or project. It also installs a skill telling the agent where the optics
+documentation is, for whichever of Claude Code, Cursor and the Gemini CLI you have.
+
 ## Settings
 
 | setting | default | |
 |---|---|---|
 | `optics.server.pythonCommand` | unset | override the interpreter the Python extension selects |
 | `optics.trace.server` | `"off"` | log LSP traffic to the "Optics" output channel |
+| `optics.mcp.enabled` | `true` | offer the server to AI agents over MCP |
+| `optics.mcp.binaryPath` | unset | use this `agent-lsp` binary rather than downloading one |
 
 ## Commands
 
 - **Optics: Restart Language Server**
+- **Optics: Configure MCP Server for Claude Code**
 
 ## License
 

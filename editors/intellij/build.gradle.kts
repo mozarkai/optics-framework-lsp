@@ -51,6 +51,10 @@ tasks.prepareSandbox {
         // than trusting whatever the last local run left behind.
         exclude("**/__pycache__/**")
     }
+    // Copied rather than read from source: the plugin has to install it from an installed zip.
+    from(layout.projectDirectory.dir("../skills")) {
+        into("${pluginName.get()}/skills")
+    }
 }
 
 // `./gradlew runIde -PlspTrace` dumps the whole LSP conversation into the sandbox idea.log,

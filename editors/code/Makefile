@@ -1,6 +1,6 @@
 .PHONY: clean
 clean:
-	rm -rf bundled dist node_modules
+	rm -rf bundled dist node_modules skills
 
 # The same sources the parent tracks: without them this copy goes stale silently, and the
 # parent's own rebuild never reaches us.
@@ -11,3 +11,7 @@ bundled/libs/.installed: ../Makefile ../../uv.lock ../../pyproject.toml $(SERVER
 	$(MAKE) -C .. bundled/libs/.installed
 	mkdir -p bundled && rm -rf bundled/libs && cp -R ../bundled/libs bundled/libs
 	touch $@
+
+# The agent skill is shared with the JetBrains plugin; vsce can only package from this directory.
+skills/.installed: ../skills/optics-framework/SKILL.md
+	rm -rf skills && cp -R ../skills skills && touch $@

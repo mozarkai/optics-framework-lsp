@@ -19,11 +19,20 @@ import java.nio.file.Path
 class OpticsLspDescriptor(project: Project, private val python: Path) :
     ProjectWideLspClientDescriptor(project, "Optics") {
 
+    companion object {
+        /**
+         * How the server is launched, shared with the MCP bridge so both spawn it the same way.
+         * `-S` keeps site-packages out, leaving the bundled payload on PYTHONPATH the only
+         * importable one.
+         */
+        val LAUNCH_ARGS = listOf("-S", "-m", "optics_framework_lsp")
+    }
+
     /** Every CSV: the server classifies by header row, so narrowing by name would hide real suites. */
     override fun isSupportedFile(file: VirtualFile): Boolean = file.extension == "csv"
 
     override fun createCommandLine(): GeneralCommandLine =
-        GeneralCommandLine(python.toString(), "-S", "-m", "optics_framework_lsp")
+        GeneralCommandLine(listOf(python.toString()) + LAUNCH_ARGS)
             .withWorkDirectory(project.basePath)
             .withEnvironment("PYTHONPATH", pythonPath())
             // Otherwise the server writes __pycache__ into the payload we packaged.

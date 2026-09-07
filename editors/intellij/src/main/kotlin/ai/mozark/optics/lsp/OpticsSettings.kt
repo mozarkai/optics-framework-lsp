@@ -7,13 +7,17 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
 import com.intellij.util.xmlb.XmlSerializerUtil
 
-/** The one thing worth persisting: which interpreter to launch the server with. */
+/** Which interpreter to launch the server with, and which bridge binary to offer it through. */
 @Service(Service.Level.APP)
 @State(name = "OpticsSettings", storages = [Storage("optics-framework-lsp.xml")])
 class OpticsSettings : PersistentStateComponent<OpticsSettings> {
 
     @JvmField
     var pythonPath: String = ""
+
+    /** Empty means download it, which is what all but a locked-down network wants. */
+    @JvmField
+    var bridgePath: String = ""
 
     override fun getState(): OpticsSettings = this
 

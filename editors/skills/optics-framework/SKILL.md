@@ -1,6 +1,6 @@
 ---
 name: optics-framework
-description: Read the optics-framework documentation before answering about its keywords, and use the optics MCP tools for the CSV suites in this project. Use when working with optics-framework CSV test suites (test_cases, modules, elements, error_definitions) or when a keyword name, parameter or default is uncertain.
+description: Read the optics-framework documentation before answering about its keywords, and use the optics MCP tools for the test suites in this project. Use when working with optics-framework CSV or YAML test suites (test_cases, modules, elements, error_definitions) or when a keyword name, parameter or default is uncertain.
 license: Apache-2.0
 ---
 
@@ -16,7 +16,10 @@ defaults — look them up.
 
 ## What a suite is
 
-A suite is CSV files, classified by their **header row** rather than their filename:
+A suite is CSV or YAML files, classified by their **contents** rather than their filename. A
+project may mix both, and names resolve across them.
+
+A CSV is classified by its header row:
 
 | header | what the file holds |
 | --- | --- |
@@ -25,14 +28,55 @@ A suite is CSV files, classified by their **header row** rather than their filen
 | `element_name,element_id` | elements, each one or more locators tried in order |
 | `error_code,match_string` | error definitions |
 
-A CSV matching none of those is ignored by the framework, so it is not a clean file — it is an
+A YAML is classified by its top-level keys, and one file may hold all three:
+
+```yaml
+Test Cases:                 # a list of single-key mappings
+  - Add Contact:
+      - Launch Contact App  # module names, never keywords
+Modules:                    # a list of single-key mappings
+  - Launch Contact App:
+      - Launch App          # one string: the keyword, then its params
+      - Enter Text ${field} John
+Elements:                   # a plain mapping, not a list
+  field: '//input[@id="name"]'
+  save_button:              # a list is the fallback chain, tried in order
+    - '//button[@id="save"]'
+    - Save
+```
+
+A file matching none of those is ignored by the framework, so it is not a clean file — it is an
 unread one.
 
-Every name resolves project-wide: a module defined in one file is callable from any other, and a
-rename that misses one cell changes what runs instead of failing loudly.
+Every name resolves project-wide: a module defined in one file is callable from any other,
+whatever format either is in, and a rename that misses one cell changes what runs instead of
+failing loudly.
+
+## Writing YAML, and its four traps
+
+YAML is a real peer of CSV at run time, but it is undocumented, no sample ships in one, and
+`optics init` never writes one. Prefer CSV unless the project is already YAML. If you do write
+YAML, these four all fail *silently* — the reader logs and carries on with an empty section, so
+the run fails somewhere that says nothing about the cause:
+
+1. **A step needs a `${...}` before any literal param.** The reader splits at the first `${`,
+   so with none present the whole line becomes the keyword name. `- Sleep 5` looks up `sleep_5`
+   and the run fails. Define an element and write `- Sleep ${five}` instead. `- Launch App` is
+   fine: it is a real keyword taking no params.
+2. **A param cannot contain a space.** The params are whitespace-split after YAML quoting is
+   gone, so `Enter Text ${f} hello world` passes three params, not two. Use CSV for that.
+3. **Section keys are read with the case intact** — exactly `Test Cases`, `Modules`, `Elements`.
+   Writing `test_cases:` still gets the file classified as test cases, and then read as empty.
+4. **`Test Cases` and `Modules` must be lists of single-key mappings.** Written as a plain
+   mapping, the load dies with `AttributeError: 'str' object has no attribute 'items'`.
+
+Two further limits follow from trap 1: **error definitions have no YAML form at all** (they must
+be a CSV), and `Execute Module`, `Run Loop` and `Condition` cannot take a bare multi-word module
+name, because it is swallowed into the keyword or split into separate params.
 
 ## Answering questions about a suite
 
 The `optics` MCP server exposes this project's language server, which knows every module, element,
-error code and keyword signature in the project. Prefer it over reading the CSVs by hand, and
-prefer it over recalling the framework from memory.
+error code and keyword signature in the project, in both formats. It reports each of the traps
+above. Prefer it over reading the files by hand, and prefer it over recalling the framework from
+memory.

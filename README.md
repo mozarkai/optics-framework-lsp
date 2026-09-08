@@ -12,9 +12,10 @@
 
 ---
 
-An optics suite is CSV files referring to each other by name, and nothing checks that those
-names line up. This does, across the whole project, over LSP while you type or as one command.
-Its rules come from optics-framework's own readers, so it agrees with the runtime.
+An optics suite is CSV or YAML files referring to each other by name, and nothing checks that
+those names line up. This does, across the whole project and across both formats, over LSP while
+you type or as one command. Its rules come from optics-framework's own readers, so it agrees with
+the runtime.
 
 ## Install
 
@@ -35,8 +36,9 @@ Two packaged clients bundle the server's dependencies, so neither needs the step
 - **VS Code** — [`editors/code`](editors/code/README.md)
 - **IntelliJ, PyCharm and other JetBrains IDEs** — [`editors/intellij`](editors/intellij/README.md)
 
-Both need a Python 3.12+ interpreter and attach to every `*.csv` in the project without claiming
-the `.csv` extension, so whatever CSV editor you already use is untouched.
+Both need a Python 3.12+ interpreter and attach to every `*.csv`, `*.yaml` and `*.yml` in the
+project without claiming those extensions, so whatever editor you already use for them is
+untouched. A file that is not a suite gets nothing back.
 
 ---
 
@@ -98,9 +100,10 @@ interpolating either into a shell string, and raise `maxBuffer` past its 1 MB de
 <details>
 <summary><b><code>analyzed</code> and <code>skipped</code>: which files were even looked at</b></summary>
 
-File kind comes from the header row, not the filename. `analyzed` says what each file became
-(`test_cases`, `modules`, `elements`, `error_definitions`); `skipped` lists the CSVs whose
-header matched none of those.
+File kind comes from the contents, not the filename: a csv's header row, a yaml's top-level
+keys. `analyzed` says what each file became (`test_cases`, `modules`, `elements`,
+`error_definitions`, and for a yaml holding several, all of them); `skipped` lists the files that
+matched none.
 
 optics ignores those files too, so a skipped file is usually a dataset and fine. But a
 `test_cases` file with a typo in its header lands there as well, and would otherwise be
@@ -134,6 +137,19 @@ Warnings mean it loads, but a row you wrote isn't doing what it looks like:
 | `csv-too-many-columns` | the extra cells are dropped |
 | `csv-whitespace-line` | a row of nothing but separators |
 
+YAML is a peer of CSV at run time but a rough one, and every way it goes wrong goes wrong
+*silently* — the reader logs and carries on with an empty section, so the run fails somewhere
+that says nothing about the cause. These are errors:
+
+| code | meaning |
+| --- | --- |
+| `yaml-step-without-variable` | a step with no `${...}`, so its params are swallowed into the keyword name and `Sleep 5` looks up `sleep_5` |
+| `yaml-section-key-case` | `test_cases:` where the reader looks up `Test Cases`, so the section loads empty |
+| `yaml-section-shape` | `Test Cases` or `Modules` as a mapping rather than a list of single-key mappings, which aborts the run |
+| `yaml-step-not-a-string` | anything else as a step, which aborts the run |
+| `yaml-parse-error` | malformed yaml, which optics reads as an empty file |
+| `yaml-error-definitions-unread` | a warning: error definitions have no yaml form, only csv |
+
 ---
 
 # The language server
@@ -143,10 +159,10 @@ rejected, so a client that insists on passing `--stdio` needs no special handlin
 
 One workspace folder is one project. Cross-file rules mean a single edit can change
 diagnostics anywhere in the suite, so the whole folder is revalidated on every change, and the
-server asks the client to watch `**/*.csv` so a git checkout is picked up too. Open buffers
-override what is on disk. Dot folders are never descended into, because a project's `.venv` holds
-optics-framework's own sample CSVs and images, which would invent element and module names the
-project does not have.
+server asks the client to watch `**/*.{csv,yaml,yml}` so a git checkout is picked up too. Open
+buffers override what is on disk. Dot folders are never descended into, because a project's
+`.venv` holds optics-framework's own sample suites and images, which would invent element and
+module names the project does not have.
 
 ## Features
 
@@ -162,17 +178,22 @@ another without touching it.
 <details>
 <summary><b>Completion</b></summary>
 
-Aware of which column you are in, because in a CSV the column *is* the context.
+Aware of where you are, because in a CSV the column *is* the context — and in a YAML the
+section and the depth are.
 
 | where the cursor is | what is offered |
 | --- | --- |
-| an empty file | the four header rows, since the header decides the file's kind |
-| `module_step` | every keyword **and** every module in the project, since a step can be either |
+| an empty file | the four header rows, or the three yaml section keys, since either decides the file's kind |
+| `module_step`, or a yaml `Modules` step | every keyword **and** every module in the project, since a step can be either |
 | a param cell | what that particular keyword accepts at that position |
 | `test_step`, `module_name` | modules that already exist, since both columns continue a block |
 | `element_name` | names used somewhere but never defined |
-| any `element_id*` | template image filenames found anywhere in the project |
+| any `element_id*`, or a yaml locator | template image filenames found anywhere in the project |
 | `test_case` | existing test cases, plus the lifecycle names (`Suite Setup`, …) not yet used |
+
+In a YAML the section and the indent stand in for the column, and a step's params are the words
+after the keyword rather than cells of their own. A half-typed multi-word keyword is replaced
+whole, so `Press El` completes to `Press Element` rather than nesting.
 
 Param completion is specific rather than generic. `Read Data`'s second param offers the
 project's data files; `Invoke API`'s first offers `collection.api` identifiers parsed out of
@@ -184,7 +205,7 @@ modules-or-variables in the others, with `!` inversion preserved.
 
 Accepting a param the header does not yet cover **widens the header in the same edit**, because
 `csv.DictReader` drops cells the header does not name and the param would otherwise silently
-vanish.
+vanish. A YAML has no header to widen.
 
 </details>
 
@@ -282,21 +303,21 @@ being searched for under every row that mentions them.
 | `Variable` | an element, once, however many locator rows it has |
 | `Constant` | an error code |
 
-The match is a case-insensitive substring, and each result carries the kind its file's header
-row made it (`modules`, `test_cases`, …) as the container, since that is the only thing telling
-a module from a test case of the same name.
+The match is a case-insensitive substring, and each result carries the kind its file's contents
+made it (`modules`, `test_cases`, …) as the container, since that is the only thing telling a
+module from a test case of the same name.
 
 </details>
 
 <details>
 <summary><b>Semantic tokens</b></summary>
 
-Highlighting a CSV grammar cannot express, because the meaning of a cell depends on the column
-above it and on the rest of the project:
+Highlighting neither grammar can express, because the meaning of a piece of a suite depends on
+where it sits and on the rest of the project:
 
 | token | what it marks |
 | --- | --- |
-| `keyword` | the header row, the names that decide what the file is |
+| `keyword` | the header row, or a yaml's section keys: the names that decide what the file is |
 | `class` | a test case |
 | `function` | a module, wherever it is named |
 | `method` | a step that resolves to a framework keyword |

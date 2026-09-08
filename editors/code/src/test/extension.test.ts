@@ -17,6 +17,22 @@ suite('optics-framework-lsp', () => {
     assert.strictEqual(finding!.severity, vscode.DiagnosticSeverity.Error);
     assert.strictEqual(finding!.range.start.line, 2);
   });
+
+  test('reports a diagnostic in a yaml suite', async () => {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(folder, 'expected the broken-suite fixture to be open as the workspace');
+
+    // Proves the document selector reaches yaml: without it the server never sees this file.
+    const uri = vscode.Uri.file(path.join(folder!.uri.fsPath, 'suite.yaml'));
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
+
+    const diagnostics = await waitForDiagnostics(uri);
+    const finding = diagnostics.find((d) => d.message.includes('Sleep 5'));
+
+    assert.ok(finding, `expected a diagnostic mentioning "Sleep 5", got: ${JSON.stringify(diagnostics)}`);
+    assert.strictEqual(finding!.severity, vscode.DiagnosticSeverity.Error);
+    assert.strictEqual(finding!.range.start.line, 4);
+  });
 });
 
 async function waitForDiagnostics(uri: vscode.Uri, timeoutMs = 20_000): Promise<vscode.Diagnostic[]> {

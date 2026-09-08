@@ -2,7 +2,7 @@
   "name": "optics-framework-lsp",
   "displayName": "Optics Framework",
   "description": "Diagnostics, completion, hover, goto-definition, rename, workspace symbols and an MCP server for AI agents, for optics-framework CSV and YAML test suites",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "publisher": "mozarkai",
   "license": "Apache-2.0",
   "repository": {
@@ -52,14 +52,21 @@
       "properties": {
         "optics.server.pythonCommand": {
           "scope": "window",
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "default": null,
           "description": "The Python interpreter to launch the language server with. Defaults to the interpreter selected via the Python extension."
         },
         "optics.trace.server": {
           "scope": "window",
           "type": "string",
-          "enum": ["off", "messages", "verbose"],
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
           "default": "off",
           "description": "Log LSP messages sent to/from the server"
         },
@@ -71,7 +78,10 @@
         },
         "optics.mcp.binaryPath": {
           "scope": "window",
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "default": null,
           "description": "The agent-lsp binary to bridge with. Set this to skip the download, for a network that cannot reach GitHub."
         }

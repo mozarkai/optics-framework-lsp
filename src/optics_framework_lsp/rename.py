@@ -7,12 +7,21 @@ from collections.abc import Iterable, Iterator
 
 from lsprotocol.types import Position, Range, TextEdit
 
-from .completion import Cursor, param_symbol
+from . import yaml_cursor
+from .completion import Cursor, param_symbol, yaml_symbol_at
 from .keyword_catalog import Catalog, slug
+from .parser import is_yaml
+from .parser.ast import Step
 from .parser.csv_parser import filled_params, sheet, spans
+from .parser.yaml_parser import parse_yaml_sources
+from .positions import to_utf16
 from .validation import VAR, declares_at, runs_at
 
 _Place = tuple[str, int, int, int]
+
+# What the project owns and so what may be moved. A keyword belongs to the framework,
+# and an image, data file or api identifier names something outside the suite.
+_OURS = ("module", "test case", "element", "error code")
 
 # What a cell names, by the header above it. A `test_step` names a module, never a
 # keyword: only a `module_step` can be either.
@@ -95,9 +104,74 @@ def _in_param(
         yield start + len(cell) - len(name), start + len(cell)
 
 
+def _in_yaml_params(
+    uri: str, step: Step, kind: str, name: str
+) -> Iterator[_Place]:
+    """The same rules as `_in_param`, against a step read whole rather than a row of
+    cells: a param's index is its place after the keyword."""
+    runs = runs_at(step.step_name, len(step.params))
+    binds = declares_at(step.step_name, len(step.params))
+
+    for param, span in enumerate(step.param_spans):
+        cell = step.params[param]
+        if kind == "element":
+            for match in VAR.finditer(cell):
+                if match.group(1) == name:
+                    # Only the name moves; the ${} around it stays put.
+                    yield uri, step.row - 1, span[0] + match.start(1), span[0] + match.end(1)
+            if param in binds and cell == name:
+                yield uri, step.row - 1, *span
+        elif kind == "module" and param in runs and cell.removeprefix("!") == name:
+            # The `!` of an inverted condition stays; only the name after it moves.
+            yield uri, step.row - 1, span[0] + len(cell) - len(name), span[1]
+
+
+def _in_yaml(uri: str, text: str, catalog: Catalog, kind: str, name: str) -> Iterator[_Place]:
+    """Every span in one yaml file that writes this name.
+
+    Read from the ast rather than by scanning the text. A csv has to scan, because a
+    cell's span is only recoverable from its line; a yaml step is one scalar that the
+    reader itself split, and the parser recorded where each piece of it landed.
+    """
+    ast = parse_yaml_sources([(uri, text)])
+
+    for block in ast.test_cases:
+        if kind == "test case" and block.name == name and block.name_span:
+            yield uri, block.start_row - 1, *block.name_span
+        if kind == "module":
+            for step in block.steps:
+                # A test step names a module, never a keyword.
+                if step.step_name == name and step.name_span:
+                    yield uri, step.row - 1, *step.name_span
+
+    for block in ast.modules:
+        if kind == "module" and block.name == name and block.name_span:
+            yield uri, block.start_row - 1, *block.name_span
+
+        for step in block.steps:
+            named = kind == "module" and step.step_name == name and step.name_span
+            # A keyword of the same name wins, so that step is not this module.
+            if named and slug(step.step_name) not in catalog and step.name_span:
+                yield uri, step.row - 1, *step.name_span
+            yield from _in_yaml_params(uri, step, kind, name)
+
+    if kind == "element":
+        for element in ast.elements:
+            if element.name == name and element.name_span:
+                yield uri, element.row - 1, *element.name_span
+
+
 def places(sources: Iterable[tuple[str, str]], catalog: Catalog, kind: str, name: str) -> Iterator[_Place]:
-    """Every cell in the project that writes this name, as uri, line, start, end."""
+    """Every cell in the project that writes this name, as uri, line, start, end.
+
+    Dispatched per source, not per call: the runner keys by name and picks a reader per
+    file, so one rename can span both formats.
+    """
     for uri, text in sources:
+        if is_yaml(uri):
+            yield from _in_yaml(uri, text, catalog, kind, name)
+            continue
+
         headers, body = sheet(text)
         lines = text.splitlines()
         for number, fields in body:
@@ -105,26 +179,44 @@ def places(sources: Iterable[tuple[str, str]], catalog: Catalog, kind: str, name
                 yield uri, number, start, end
 
 
-def prepare(text: str, position: Position, catalog: Catalog | None) -> Range | None:
-    """The span the client should offer to edit, or nothing if the name is not ours."""
-    cursor = Cursor(text, position)
-    found = _symbol(cursor, catalog)
-    if found is None:
-        return None
+def _symbol_at(text: str, position: Position, catalog: Catalog | None, uri: str):
+    """The name under the cursor and what kind of thing it is, whichever format the file
+    is in. Only what the project owns comes back."""
+    if is_yaml(uri):
+        found = yaml_symbol_at(text, position, catalog)
+        return found if found and found[0] in _OURS else None
+    return _symbol(Cursor(text, position), catalog)
 
-    _, name = found
-    line = text.splitlines()[position.line]
-    places = spans(line)
-    if cursor.column >= len(places):
+
+def _offered(text: str, position: Position, catalog: Catalog | None, uri: str):
+    """The whole field the cursor is in, which is where the name is looked for."""
+    if is_yaml(uri):
+        found = yaml_cursor.cursor(text, position, catalog)
+        return (found.start, found.start + len(found.word)) if found.word else None
+
+    cursor = Cursor(text, position)
+    places = spans(text.splitlines()[position.line])
+    return places[cursor.column] if cursor.column < len(places) else None
+
+
+def prepare(
+    text: str, position: Position, catalog: Catalog | None, *, uri: str = ""
+) -> Range | None:
+    """The span the client should offer to edit, or nothing if the name is not ours."""
+    found = _symbol_at(text, position, catalog, uri)
+    field = _offered(text, position, catalog, uri)
+    if found is None or field is None:
         return None
 
     # A ${name} offers only the name: the braces are not part of it.
-    start, end = places[cursor.column]
+    _, name = found
+    start, end = field
+    line = text.splitlines()[position.line]
     inside = line.find(name, start, end)
     at = (inside, inside + len(name)) if inside >= 0 else (start, end)
     return Range(
-        start=Position(line=position.line, character=at[0]),
-        end=Position(line=position.line, character=at[1]),
+        start=Position(line=position.line, character=to_utf16(line, at[0])),
+        end=Position(line=position.line, character=to_utf16(line, at[1])),
     )
 
 
@@ -134,20 +226,28 @@ def rename(
     text: str,
     position: Position,
     new_name: str,
+    *,
+    uri: str = "",
 ) -> dict[str, list[TextEdit]] | None:
     """Where the name under the cursor is written, and what to put there instead."""
-    found = _symbol(Cursor(text, position), catalog)
+    found = _symbol_at(text, position, catalog, uri)
     if found is None:
         return None
 
     kind, name = found
+    # Kept, because the spans come back as code-point offsets and turning one into the
+    # column a client counts in needs the line it sits on.
+    sources = list(sources)
+    lines = {uri: body.splitlines() for uri, body in sources}
+
     edits: dict[str, list[TextEdit]] = {}
     for uri, line, start, end in places(sources, catalog or {}, kind, name):
+        row = lines[uri][line] if line < len(lines[uri]) else ""
         edits.setdefault(uri, []).append(
             TextEdit(
                 range=Range(
-                    start=Position(line=line, character=start),
-                    end=Position(line=line, character=end),
+                    start=Position(line=line, character=to_utf16(row, start)),
+                    end=Position(line=line, character=to_utf16(row, end)),
                 ),
                 new_text=new_name,
             )

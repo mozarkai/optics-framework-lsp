@@ -58,9 +58,9 @@ jobs:
         working-directory: editors/code
         run: npm ci
 
-      - name: Build the bundled Python libs
+      - name: Build the bundled Python libs and the shared skill
         working-directory: editors/code
-        run: make bundled/libs/.installed
+        run: make bundled/libs/.installed skills/.installed
 
       - name: Package the extension
         working-directory: editors/code

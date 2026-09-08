@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 from .keyword_catalog import CATALOG, Catalog
-from .parser.csv_parser import parse_csv_sources
+from .parser import SUITE, parse_sources
 from .validation import ERROR, SOURCE, WARNING, validate
 
 _SEVERITY = {ERROR: "error", WARNING: "warning"}
@@ -24,8 +24,7 @@ def report(files: list[tuple[str, str]], catalog: Catalog | None = CATALOG) -> d
     Findings are sorted by (file, row) so a caller need not re-sort, and `row` is 1-based
     while `range` is 0-based — the two conventions callers ask for.
     """
-    sources = [(name, text) for name, text in files if name.lower().endswith(".csv")]
-    ast = parse_csv_sources(sources)
+    ast = parse_sources(files)
 
     diagnostics = sorted(
         (
@@ -52,8 +51,8 @@ def report(files: list[tuple[str, str]], catalog: Catalog | None = CATALOG) -> d
     return {
         # A summary of the list, not a decision: which severities block is the caller's policy.
         "status": "FAIL" if any(d["severity"] == "error" for d in diagnostics) else "PASS",
-        # What each file's header made it, and everything we could not read. Without the
-        # second, a file the framework also ignores is indistinguishable from a clean one.
+        # What each file's contents made it, and everything we could not read. Without
+        # the second, a file the framework also ignores reads as a clean one.
         "analyzed": ast.kinds,
         "skipped": sorted(name for name, _ in files if name not in ast.kinds),
         "diagnostics": diagnostics,
@@ -61,8 +60,8 @@ def report(files: list[tuple[str, str]], catalog: Catalog | None = CATALOG) -> d
 
 
 def walk(root: Path) -> list[tuple[str, str]]:
-    """Every csv under `root`, named relative to it so two files of the same basename in
-    different folders stay distinct.
+    """Every suite file under `root`, named relative to it so two files of the same
+    basename in different folders stay distinct.
 
     Dot folders are skipped, the same rule the server applies: a project's `.venv` holds
     optics-framework's own sample csvs, which would invent names the project does not have.
@@ -71,7 +70,7 @@ def walk(root: Path) -> list[tuple[str, str]]:
     for parent, folders, files in root.walk():
         folders[:] = sorted(folder for folder in folders if not folder.startswith("."))
         for name in sorted(files):
-            if name.lower().endswith(".csv"):
+            if name.lower().endswith(SUITE):
                 path = parent / name
                 found.append((str(path.relative_to(root)), path.read_text(errors="replace")))
     return found

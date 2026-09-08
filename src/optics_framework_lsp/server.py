@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -14,7 +15,8 @@ from pygls.uris import to_fs_path
 from . import completion
 from .parser.ast import AST
 from .keyword_catalog import CATALOG
-from .parser.csv_parser import parse_csv_sources
+from .parser import SUITE, is_yaml, parse_sources
+from .positions import to_utf16
 from . import rename as renaming
 from .symbols import symbols, workspace_symbols
 from .tokens import LEGEND, MODIFIERS, tokens
@@ -23,7 +25,6 @@ from .validation import Finding, SOURCE, validate
 
 # What `_load_file_data` can parse.
 _DATA = {".csv", ".json"}
-_YAML = {".yaml", ".yml"}
 
 
 def images(files: list[Path]) -> list[str]:
@@ -31,15 +32,19 @@ def images(files: list[Path]) -> list[str]:
     return sorted({p.name for p in files if p.suffix.lower() in completion.IMAGE_SUFFIXES})
 
 
-def apis(files: list[Path]) -> list[str]:
-    """`collection.api` identifiers, as `invoke_api` splits them."""
+def apis(sources: Iterable[tuple[str, str]]) -> list[str]:
+    """`collection.api` identifiers, as `invoke_api` splits them.
+
+    From the same snapshot as everything else rather than from disk, so an unsaved edit
+    to an api file counts and the file is not read twice in one request.
+    """
     found = []
-    for path in files:
-        if path.suffix.lower() not in _YAML:
+    for uri, text in sources:
+        if not is_yaml(uri):
             continue
 
         try:
-            data = yaml.safe_load(path.read_text(errors="replace"))
+            data = yaml.safe_load(text)
         except yaml.YAMLError:
             continue
         if not isinstance(data, dict):
@@ -71,9 +76,10 @@ def _range(finding: Finding, lines: list[str]) -> types.Range:
     """The finding's whole row. Ending at the next line's start is past EOF on the last row,
     and IntelliJ refuses to annotate a range outside the document."""
     line = min(finding.line, max(len(lines) - 1, 0))
+    row = lines[line] if lines else ""
     return types.Range(
         start=types.Position(line=line, character=0),
-        end=types.Position(line=line, character=len(lines[line]) if lines else 0),
+        end=types.Position(line=line, character=to_utf16(row, len(row))),
     )
 
 
@@ -119,7 +125,7 @@ class OpticsLanguageServer(LanguageServer):
         return found
 
     def sources(self, files: list[Path]) -> list[tuple[str, str]]:
-        """Every csv among `files`, with open buffers overriding what is on disk."""
+        """Every suite file among `files`, with open buffers overriding disk."""
         return [(uri, text) for uri, text, _ in self.snapshot(files)]
 
     def snapshot(self, files: list[Path]) -> list[tuple[str, str, int | None]]:
@@ -127,7 +133,7 @@ class OpticsLanguageServer(LanguageServer):
         cannot tell a stale publish from a fresh one."""
         snapshot = []
         for path in files:
-            if path.suffix != ".csv":
+            if path.suffix.lower() not in SUITE:
                 continue
 
             uri = path.as_uri()
@@ -141,7 +147,7 @@ class OpticsLanguageServer(LanguageServer):
     def validate_folder(self, folder_uri: str) -> None:
         snapshot = {uri: (text, v) for uri, text, v in self.snapshot(self.files(folder_uri))}
         found = validate(
-            parse_csv_sources([(uri, text) for uri, (text, _) in snapshot.items()]),
+            parse_sources([(uri, text) for uri, (text, _) in snapshot.items()]),
             CATALOG,
         )
 
@@ -179,10 +185,14 @@ async def initialized(ls: OpticsLanguageServer, params: types.InitializedParams)
             types.RegistrationParams(
                 registrations=[
                     types.Registration(
-                        id="optics-csv-watcher",
+                        id="optics-suite-watcher",
                         method=types.WORKSPACE_DID_CHANGE_WATCHED_FILES,
                         register_options=types.DidChangeWatchedFilesRegistrationOptions(
-                            watchers=[types.FileSystemWatcher(glob_pattern="**/*.csv")]
+                            watchers=[
+                                types.FileSystemWatcher(
+                                    glob_pattern="**/*.{csv,yaml,yml}"
+                                )
+                            ]
                         ),
                     )
                 ]
@@ -241,15 +251,17 @@ def completions(
         return []
 
     files = ls.files(folder)
-    ast = parse_csv_sources(ls.sources(files))
+    sources = ls.sources(files)
+    ast = parse_sources(sources)
     return completion.complete(
         ls.workspace.get_text_document(uri).source,
         params.position,
         ast,
         CATALOG,
+        uri=uri,
         images=images(files),
         data_files=data_files(to_fs_path(folder), files, ast),
-        apis=apis(files),
+        apis=apis(sources),
     )
 
 
@@ -267,8 +279,36 @@ def semantic_tokens(
 
     # Which names are modules is a whole-project question, as it is for references.
     source = ls.workspace.get_text_document(uri).source
-    ast = parse_csv_sources(ls.sources(ls.files(folder)))
-    return types.SemanticTokens(data=tokens(source, ast, CATALOG))
+    ast = parse_sources(ls.sources(ls.files(folder)))
+    return types.SemanticTokens(data=tokens(source, ast, CATALOG, uri=uri))
+
+
+def _reencoded(at: types.Range, lines: list[str]) -> types.Range:
+    """One range, in the units a client counts columns in.
+
+    Rebuilt rather than adjusted in place: a symbol's `selection_range` is built from
+    the very `Position` its `range` starts at, so mutating would convert it twice.
+    """
+
+    def column(position: types.Position) -> types.Position:
+        row = lines[position.line] if position.line < len(lines) else ""
+        return types.Position(
+            line=position.line, character=to_utf16(row, position.character)
+        )
+
+    return types.Range(start=column(at.start), end=column(at.end))
+
+
+def _reencode(found: Sequence[types.DocumentSymbol], lines: list[str]) -> None:
+    """An outline's columns, in the units a client counts them in.
+
+    Done here rather than in `symbols`, which is handed an ast and no text — and a
+    column cannot be converted without the line it sits on.
+    """
+    for symbol in found:
+        symbol.range = _reencoded(symbol.range, lines)
+        symbol.selection_range = _reencoded(symbol.selection_range, lines)
+        _reencode(symbol.children or [], lines)
 
 
 @server.feature(types.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
@@ -277,7 +317,10 @@ def document_symbols(
 ) -> list[types.DocumentSymbol]:
     # One file's outline, so the rest of the workspace is not parsed.
     uri = params.text_document.uri
-    return symbols(parse_csv_sources([(uri, ls.workspace.get_text_document(uri).source)]))
+    source = ls.workspace.get_text_document(uri).source
+    found = symbols(parse_sources([(uri, source)]))
+    _reencode(found, source.splitlines())
+    return found
 
 
 @server.feature(types.WORKSPACE_SYMBOL)
@@ -288,7 +331,7 @@ def workspace_symbol(
     found: list[types.WorkspaceSymbol] = []
     for folder in ls.workspace.folders:
         found += workspace_symbols(
-            parse_csv_sources(ls.sources(ls.files(folder))), params.query
+            parse_sources(ls.sources(ls.files(folder))), params.query
         )
     return found
 
@@ -304,6 +347,7 @@ def hover(ls: OpticsLanguageServer, params: types.HoverParams) -> types.Hover | 
         ls.workspace.get_text_document(params.text_document.uri).source,
         params.position,
         CATALOG,
+        uri=params.text_document.uri,
     )
 
 
@@ -321,6 +365,7 @@ def rename(ls: OpticsLanguageServer, params: types.RenameParams) -> types.Worksp
         ls.workspace.get_text_document(uri).source,
         params.position,
         params.new_name,
+        uri=uri,
     )
     return types.WorkspaceEdit(changes=edits) if edits else None
 
@@ -329,11 +374,12 @@ def rename(ls: OpticsLanguageServer, params: types.RenameParams) -> types.Worksp
 def prepare_rename(
     ls: OpticsLanguageServer, params: types.PrepareRenameParams
 ) -> types.Range | None:
-    folder = ls.folder_of(params.text_document.uri)
+    # No folder check: nothing here is a project-wide question, only what the cursor is on.
     return renaming.prepare(
         ls.workspace.get_text_document(params.text_document.uri).source,
         params.position,
         CATALOG,
+        uri=params.text_document.uri,
     )
 
 
@@ -346,12 +392,13 @@ def references(
     if folder is None:
         return []
 
-    ast = parse_csv_sources(ls.sources(ls.files(folder)))
+    ast = parse_sources(ls.sources(ls.files(folder)))
     return completion.references(
         ls.workspace.get_text_document(uri).source,
         params.position,
         ast,
         CATALOG,
+        uri=uri,
         include_declaration=params.context.include_declaration,
     )
 
@@ -365,18 +412,23 @@ def definition(
     if folder is None:
         return []
 
-    ast = parse_csv_sources(ls.sources(ls.files(folder)))
+    ast = parse_sources(ls.sources(ls.files(folder)))
     return completion.definition(
         ls.workspace.get_text_document(uri).source,
         params.position,
         ast,
         CATALOG,
+        uri=uri,
     )
 
 
 @server.feature(
     types.TEXT_DOCUMENT_SIGNATURE_HELP,
-    types.SignatureHelpOptions(trigger_characters=[","], retrigger_characters=[","]),
+    # A space as well as a comma: a csv separates params with one, and a yaml step
+    # holds them all in a single scalar separated by the other.
+    types.SignatureHelpOptions(
+        trigger_characters=[",", " "], retrigger_characters=[",", " "]
+    ),
 )
 def signature_help(
     ls: OpticsLanguageServer, params: types.SignatureHelpParams
@@ -390,4 +442,5 @@ def signature_help(
         ls.workspace.get_text_document(params.text_document.uri).source,
         params.position,
         CATALOG,
+        uri=params.text_document.uri,
     )

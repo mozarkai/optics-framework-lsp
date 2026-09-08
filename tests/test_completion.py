@@ -129,8 +129,20 @@ def test_fixed_value_params_offer_their_values():
     state = _typing(MODULES, "Other,Is Element,${btn},", ELEMENTS)
     assert [i.label for i in state] == ["visible", "invisible", "enabled", "disabled"]
 
-    # A param with no fixed values still offers elements.
-    assert "btn" in [i.label for i in _typing(MODULES, "Other,Scroll,up,", ELEMENTS)]
+    # A param naming something still offers elements.
+    assert "btn" in [i.label for i in _typing(MODULES, "Other,Is Element,", ELEMENTS)]
+
+
+def test_literal_params_offer_nothing():
+    # event_name is a free label, and it names nothing the project defines, so elements
+    # there are noise the framework can never resolve.
+    assert _typing(MODULES, "Other,Scroll,up,", ELEMENTS) == []
+
+
+def test_a_blank_param_holds_no_place():
+    # Skipping two cells puts this on element_state, which is what the runner reads here.
+    items = _typing(MODULES, "Other,Is Element,${btn},,", ELEMENTS)
+    assert [i.label for i in items] == ["visible", "invisible", "enabled", "disabled"]
 
 
 def test_fixed_values_need_the_catalog():
@@ -140,9 +152,9 @@ def test_fixed_values_need_the_catalog():
 
 
 def test_quoted_comma_does_not_shift_the_column():
-    line = 'Other,Press Element,"//a[@x=\'1,2\']",'
-    # Still a param column, so elements are offered rather than keywords.
-    assert "btn" in [i.label for i in _typing(MODULES, line, ELEMENTS)]
+    line = 'Other,Is Element,"//a[@x=\'1,2\']",'
+    # Still the element_state column, so its values are offered rather than keywords.
+    assert "visible" in [i.label for i in _typing(MODULES, line, ELEMENTS)]
 
 
 def test_module_name_column_offers_existing_modules():

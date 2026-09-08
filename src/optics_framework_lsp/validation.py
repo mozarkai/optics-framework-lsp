@@ -14,7 +14,7 @@ from functools import partial
 from operator import attrgetter
 
 from .keyword_catalog import Catalog, slug
-from .parser.ast import AST, ErrorDefinition
+from .parser.ast import AST, ErrorDefinition, IssueKind, kinds_of
 
 SOURCE = "optics"
 
@@ -57,20 +57,19 @@ def _bare(name: str) -> str:
     return name.strip().removeprefix("${").removesuffix("}").strip()
 
 
-_CSV_ISSUES = {
-    "whitespace-only-line": (
+# Severity and message for each way a file is misshapen. The key is the diagnostic code
+# as well, so a caller matching on `csv-too-few-columns` sees the name used here.
+_ISSUES: dict[IssueKind, tuple[int, str]] = {
+    "csv-whitespace-line": (
         WARNING,
-        "csv-whitespace-line",
         "Whitespace-only line",
     ),
-    "too-few-columns": (
+    "csv-too-few-columns": (
         WARNING,
-        "csv-too-few-columns",
         "Row has fewer than 2 columns, so it is skipped",
     ),
-    "too-many-columns": (
+    "csv-too-many-columns": (
         WARNING,
-        "csv-too-many-columns",
         "Row has more columns than the header",
     ),
 }
@@ -91,12 +90,15 @@ _SHORT_ROW_ABORTS_THE_RUN = {"test_cases", "error_definitions"}
 
 
 def _hygiene(ast: AST) -> Iterator[_Keyed]:
-    for issue in ast.csv_issues:
-        severity, code, message = _CSV_ISSUES[issue.kind]
-        if issue.kind == "too-few-columns" and ast.kinds.get(issue.uri) in _SHORT_ROW_ABORTS_THE_RUN:
+    for issue in ast.issues:
+        severity, template = _ISSUES[issue.kind]
+        if issue.kind == "csv-too-few-columns" and (
+            kinds_of(ast, issue.uri) & _SHORT_ROW_ABORTS_THE_RUN
+        ):
             severity = ERROR
-            message = "Row has fewer than 2 columns, which aborts the whole run"
-        yield _diag(issue.uri, issue.row, severity, code, message)
+            template = "Row has fewer than 2 columns, which aborts the whole run"
+
+        yield _diag(issue.uri, issue.row, severity, issue.kind, template)
 
 
 def _duplicates(ast: AST) -> Iterator[_Keyed]:

@@ -6,7 +6,7 @@ import csv
 import io
 from collections.abc import Iterable
 
-from .ast import AST, Block, CsvIssue, Element, ErrorDefinition, Locator, Step
+from .ast import AST, Block, Element, ErrorDefinition, Locator, SourceIssue, Step
 
 _Row = tuple[list[str], int]
 
@@ -96,18 +96,25 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
         if not (is_test_case_csv or is_module_csv or is_element_csv or is_error_csv):
             continue
 
-        ast.kinds[uri] = (
-            "test_cases" if is_test_case_csv
-            else "modules" if is_module_csv
-            else "elements" if is_element_csv
-            else "error_definitions"
+        # Every kind the header matched, as `_identify_csv_content` returns a set of
+        # them: a header naming both `test_step` and `module_step` really is both files,
+        # and the body loop below already fills both lists.
+        ast.kinds[uri] = ",".join(
+            kind
+            for kind, matched in (
+                ("test_cases", is_test_case_csv),
+                ("modules", is_module_csv),
+                ("elements", is_element_csv),
+                ("error_definitions", is_error_csv),
+            )
+            if matched
         )
 
         # Empty line is fine; whitespace-only is not.
         for cells, row in blank_rows:
             if any(c != "" for c in cells):
-                ast.csv_issues.append(
-                    CsvIssue(uri=uri, row=row, kind="whitespace-only-line")
+                ast.issues.append(
+                    SourceIssue(uri=uri, row=row, kind="csv-whitespace-line")
                 )
 
         # Rows sharing a name are one block wherever they sit: `read_test_cases` and
@@ -119,14 +126,14 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
             values = [v.strip() for v in cells]
 
             if len(values) < 2:
-                ast.csv_issues.append(
-                    CsvIssue(uri=uri, row=row, kind="too-few-columns")
+                ast.issues.append(
+                    SourceIssue(uri=uri, row=row, kind="csv-too-few-columns")
                 )
                 continue
 
             if len(values) > len(headers):
-                ast.csv_issues.append(
-                    CsvIssue(uri=uri, row=row, kind="too-many-columns")
+                ast.issues.append(
+                    SourceIssue(uri=uri, row=row, kind="csv-too-many-columns")
                 )
 
             # Both readers need both cells filled: an unnamed row does not continue the
@@ -160,7 +167,7 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
                 # them all: a row can carry an xpath and a text fallback side by side.
                 places = spans(lines[row - 1] if row <= len(lines) else "")
                 locators = [
-                    Locator(cell, *(places[i] if i < len(places) else (0, 0)))
+                    Locator(cell, *(places[i] if i < len(places) else (0, 0)), row=row)
                     for i, header in enumerate(headers)
                     if header.startswith("element_id") and (cell := _cell(values, i))
                 ]

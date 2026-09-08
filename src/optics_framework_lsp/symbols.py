@@ -1,4 +1,4 @@
-# The outline of one csv: the test cases, modules or elements it defines, and the rows
+# The outline of one file: the test cases, modules or elements it defines, and the rows
 # that make each of them up. `workspace_symbols` is the same names across a whole project,
 # flat and searchable, for a caller that has no file in hand.
 
@@ -67,10 +67,14 @@ def _block(block: Block, kind: SymbolKind) -> DocumentSymbol:
 
 
 def _element(rows: list[Element]) -> DocumentSymbol:
-    """One element, with a child per locator: the fallbacks tried in order."""
+    """One element, with a child per locator: the fallbacks tried in order.
+
+    Each locator carries its own row, because a yaml fallback list puts each on a line
+    of its own where a csv writes them all across one.
+    """
     locators = [
         _symbol(
-            found.text, SymbolKind.String, "", row.row, row.row,
+            found.text, SymbolKind.String, "", found.row, found.row,
             chars=(found.start, found.end),
         )
         for row in rows
@@ -87,7 +91,8 @@ def _element(rows: list[Element]) -> DocumentSymbol:
 
 
 def symbols(ast: AST) -> list[DocumentSymbol]:
-    """A csv holds one kind of thing, so only one of these lists is ever filled."""
+    """A csv holds one kind of thing, so only one of these lists is filled for one. A
+    yaml may hold every section at once, so all of them can be."""
     found = [_block(block, SymbolKind.Class) for block in ast.test_cases]
     found += [_block(block, SymbolKind.Function) for block in ast.modules]
 
@@ -120,7 +125,7 @@ def workspace_symbols(ast: AST, query: str) -> list[WorkspaceSymbol]:
     # `read_elements` treats as one element — into the row that first declares it.
     found: dict[tuple[str, str], WorkspaceSymbol] = {}
 
-    def add(name: str, kind: SymbolKind, uri: str, row: int) -> None:
+    def add(name: str, kind: SymbolKind, container: str, uri: str, row: int) -> None:
         if not name or wanted not in name.lower():
             return
         at = Position(line=max(row - 1, 0), character=0)
@@ -129,9 +134,10 @@ def workspace_symbols(ast: AST, query: str) -> list[WorkspaceSymbol]:
             WorkspaceSymbol(
                 name=name,
                 kind=kind,
-                # The kind the header row made the file. It is the only place a caller can
-                # be told a module from a test case: WorkspaceSymbol has no `detail`.
-                container_name=ast.kinds.get(uri),
+                # What this name is, not what its file is: one yaml may hold every
+                # section, and this is the only place a caller can be told a module from
+                # a test case, since WorkspaceSymbol has no `detail`.
+                container_name=container,
                 location=Location(uri=uri, range=Range(start=at, end=at)),
             ),
         )
@@ -139,15 +145,17 @@ def workspace_symbols(ast: AST, query: str) -> list[WorkspaceSymbol]:
     # The same kinds as the outline above, so a client showing both does not label one
     # thing two ways.
     for block in ast.test_cases:
-        add(block.name, SymbolKind.Class, block.uri, block.start_row)
+        add(block.name, SymbolKind.Class, "test_cases", block.uri, block.start_row)
 
     for block in ast.modules:
-        add(block.name, SymbolKind.Function, block.uri, block.start_row)
+        add(block.name, SymbolKind.Function, "modules", block.uri, block.start_row)
 
     for element in ast.elements:
-        add(element.name, SymbolKind.Variable, element.uri, element.row)
+        add(element.name, SymbolKind.Variable, "elements", element.uri, element.row)
 
     for error in ast.error_definitions:
-        add(error.code, SymbolKind.Constant, error.uri, error.row)
+        add(
+            error.code, SymbolKind.Constant, "error_definitions", error.uri, error.row
+        )
 
     return list(found.values())

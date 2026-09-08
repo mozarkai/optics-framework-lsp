@@ -14,7 +14,9 @@ from functools import partial
 from operator import attrgetter
 
 from .keyword_catalog import Catalog, slug
-from .parser.ast import AST, ErrorDefinition, IssueKind, kinds_of
+from .parser import is_yaml
+from .parser.ast import AST, ErrorDefinition, IssueKind, Step, kinds_of
+from .parser.yaml_parser import CLASSIFY, SECTIONS
 
 SOURCE = "optics"
 
@@ -59,6 +61,10 @@ def _bare(name: str) -> str:
 
 # Severity and message for each way a file is misshapen. The key is the diagnostic code
 # as well, so a caller matching on `csv-too-few-columns` sees the name used here.
+#
+# Every yaml kind is an error, and for the same reason each time — the reader logs the
+# problem and carries on with an empty section, so the run fails later somewhere that
+# says nothing about the real cause.
 _ISSUES: dict[IssueKind, tuple[int, str]] = {
     "csv-whitespace-line": (
         WARNING,
@@ -71,6 +77,34 @@ _ISSUES: dict[IssueKind, tuple[int, str]] = {
     "csv-too-many-columns": (
         WARNING,
         "Row has more columns than the header",
+    ),
+    "yaml-parse-error": (
+        ERROR,
+        "Malformed yaml ({detail}), which optics reads as an empty file rather than "
+        "reporting",
+    ),
+    "yaml-section-key-case": (
+        ERROR,
+        "`{detail}` is found but never read: the reader looks up `{exact}` with the "
+        "case intact, so this section loads as empty",
+    ),
+    "yaml-section-shape": (
+        ERROR,
+        "`{detail}` must be a list of single-key mappings; written as a mapping it "
+        "aborts the whole run",
+    ),
+    "yaml-step-not-a-string": (
+        ERROR,
+        "A step must be a string; anything else aborts the whole run",
+    ),
+    "yaml-step-without-variable": (
+        ERROR,
+        "`{detail}` has no ${{...}}, so the whole line is read as the keyword name and "
+        "no keyword answers to it",
+    ),
+    "yaml-error-definitions-unread": (
+        WARNING,
+        "`{detail}` is never read: error definitions have no yaml form, only csv",
     ),
 }
 
@@ -98,7 +132,14 @@ def _hygiene(ast: AST) -> Iterator[_Keyed]:
             severity = ERROR
             template = "Row has fewer than 2 columns, which aborts the whole run"
 
-        yield _diag(issue.uri, issue.row, severity, issue.kind, template)
+        exact = SECTIONS.get(CLASSIFY.get(issue.detail.strip().lower(), ""), "")
+        yield _diag(
+            issue.uri,
+            issue.row,
+            severity,
+            issue.kind,
+            template.format(detail=issue.detail, exact=exact),
+        )
 
 
 def _duplicates(ast: AST) -> Iterator[_Keyed]:
@@ -338,6 +379,19 @@ def _unknown_elements(ast: AST) -> Iterator[_Keyed]:
             )
 
 
+def _unresolved(uri: str, step: Step) -> tuple[int, str, str]:
+    """Why a step resolved to nothing. In a yaml the likely reason is a literal param:
+    `_parse_module_step` splits at the first `${...}`, so with none present the params
+    are swallowed into the keyword name and `Sleep 5` looks up `sleep_5`. A csv keeps
+    its params in their own columns and cannot go wrong this way."""
+    if is_yaml(uri) and " " in (step.step_name or "") and not VAR.search(step.step_name or ""):
+        code = "yaml-step-without-variable"
+        severity, template = _ISSUES[code]
+        return severity, code, template.format(detail=step.step_name, exact="")
+
+    return ERROR, "keyword-not-found", f"{step.step_name!r} is not a keyword or module"
+
+
 def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Keyed]:
     # Raw names: `get_module_definition` is a plain dict lookup, so case matters.
     modules = {m.name for m in ast.modules}
@@ -354,13 +408,7 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Keyed]:
 
             keyword = catalog.get(slug(step.step_name))
             if keyword is None:
-                yield _diag(
-                    module.uri,
-                    step.row,
-                    ERROR,
-                    "keyword-not-found",
-                    f"{step.step_name!r} is not a keyword or module",
-                )
+                yield _diag(module.uri, step.row, *_unresolved(module.uri, step))
                 continue
 
             given = len(step.params)

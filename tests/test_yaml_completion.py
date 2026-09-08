@@ -109,6 +109,13 @@ def test_a_params_documented_values_win_over_variables():
     got = _complete("Modules:\n  - M:\n      - Read Data ${x} ", 2, 25, data_files=["d.csv"])
     assert got == ["d.csv"]
 
+def test_a_literal_param_offers_nothing_until_a_variable_is_started():
+    # `index` is a number. Nothing belongs there, but `Press Element ${save} ${n}` is how
+    # a yaml writes one, so the elements stay reachable behind the `$`.
+    line = "Modules:\n  - M:\n      - Press Element ${save} "
+    assert _complete(line, 2, 31) == []
+    assert _complete(line + "${", 2, 33) == ["save"]
+
 def test_an_element_name_offers_what_is_used_but_undefined():
     ast = _ast((YAML_URI, "Modules:\n  - M:\n      - Press Element ${gone}\n"))
     assert _complete("Elements:\n  ", 1, 2, ast=ast) == ["gone"]

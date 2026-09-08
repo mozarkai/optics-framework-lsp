@@ -1,0 +1,5 @@
+# A yaml suite with the trap that only yaml has: `_parse_module_step` splits at the
+# first `${...}`, so with none present `Sleep 5` becomes the keyword name.
+Modules:
+  - Yaml Module:
+      - Sleep 5

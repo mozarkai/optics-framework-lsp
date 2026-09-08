@@ -377,8 +377,10 @@ def test_apis_are_read_from_project_yaml(tmp_path):
     (tmp_path / "config.yaml").write_text("driver_sources:\n  - appium\n")
     (tmp_path / "broken.yml").write_text("api: [unclosed\n")
 
-    files = [p for p in tmp_path.rglob("*") if p.is_file()]
-    assert apis(files) == ["users.create_user", "users.get_user"]
+    sources = [
+        (p.as_uri(), p.read_text()) for p in tmp_path.rglob("*") if p.is_file()
+    ]
+    assert apis(sources) == ["users.create_user", "users.get_user"]
 
 
 def _send(process, message):
@@ -483,3 +485,116 @@ def test_diagnostic_ranges_stay_inside_the_document():
     empty = _range(on_last, [])
     assert (empty.start.line, empty.start.character) == (0, 0)
     assert (empty.end.line, empty.end.character) == (0, 0)
+
+
+# A project written in both formats at once, which the runner supports and dispatches
+# per file. Its own workspace, so the csv-only expectations above are untouched.
+MIXED = {
+    "test_cases/test_cases.csv": "test_case,test_step\nTC,Open It\n",
+    "suite.yaml": (
+        "Modules:\n"
+        "  - Open It:\n"
+        "      - Press Element ${btn}\n"
+        "      - Sleep 5\n"
+        "Elements:\n"
+        "  btn: //a\n"
+    ),
+    # Not a suite, and it must stay that way: the server is sent every yaml in the
+    # project because a file's name says nothing about what is in it.
+    "docker-compose.yml": "services:\n  web:\n    image: nginx\n",
+}
+
+
+@pytest.fixture(scope="module")
+def mixed_workspace(tmp_path_factory):
+    root = tmp_path_factory.mktemp("mixed")
+    for name, content in MIXED.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    return root
+
+
+@pytest_lsp.fixture(
+    config=ClientServerConfig(
+        server_command=[sys.executable, "-m", "optics_framework_lsp.cli"]
+    ),
+)
+async def mixed_client(lsp_client: LanguageClient, mixed_workspace):
+    result = await lsp_client.initialize_session(
+        types.InitializeParams(
+            capabilities=types.ClientCapabilities(),
+            workspace_folders=[
+                types.WorkspaceFolder(uri=mixed_workspace.as_uri(), name="mixed")
+            ],
+        )
+    )
+    # pytest-lsp keeps no copy, and one test below is about what the server advertised
+    # rather than about what it answered.
+    lsp_client.advertised = result.capabilities
+    yield
+    await lsp_client.shutdown_session()
+
+
+async def test_signature_help_triggers_on_a_space(mixed_client: LanguageClient):
+    """A csv separates params with a comma and a yaml with a space, so a client that
+    only asks on the advertised characters never asks at all in a yaml without this."""
+    options = mixed_client.advertised.signature_help_provider
+    assert options is not None
+    assert set(options.trigger_characters or []) == {",", " "}
+
+
+async def test_yaml_diagnostics_over_lsp(mixed_client: LanguageClient, mixed_workspace):
+    """`Sleep 5` has no `${...}`, so optics reads the whole line as the keyword name."""
+    uri = (mixed_workspace / "suite.yaml").as_uri()
+    (diagnostic,) = await codes_for(mixed_client, uri, ["yaml-step-without-variable"])
+
+    assert diagnostic.range.start.line == 3
+    assert "Sleep 5" in diagnostic.message
+    assert diagnostic.source == "optics"
+
+
+async def test_an_unrelated_yaml_gets_no_diagnostics(mixed_client, mixed_workspace):
+    uri = (mixed_workspace / "docker-compose.yml").as_uri()
+    assert not (mixed_client.diagnostics.get(uri) or [])
+
+
+async def test_goto_definition_crosses_the_formats_over_lsp(mixed_client, mixed_workspace):
+    """The module is defined in yaml and called from a csv."""
+    csv = mixed_workspace / "test_cases/test_cases.csv"
+    mixed_client.text_document_did_open(
+        types.DidOpenTextDocumentParams(
+            types.TextDocumentItem(
+                uri=csv.as_uri(), language_id="csv", version=1, text=csv.read_text()
+            )
+        )
+    )
+    found = await mixed_client.text_document_definition_async(
+        types.DefinitionParams(
+            text_document=types.TextDocumentIdentifier(uri=csv.as_uri()),
+            position=types.Position(line=1, character=5),
+        )
+    )
+    assert found is not None
+    (at,) = found if isinstance(found, list) else [found]
+    assert at.uri == (mixed_workspace / "suite.yaml").as_uri()
+    assert at.range.start.line == 1
+
+
+async def test_semantic_tokens_for_yaml_over_lsp(mixed_client, mixed_workspace):
+    path = mixed_workspace / "suite.yaml"
+    mixed_client.text_document_did_open(
+        types.DidOpenTextDocumentParams(
+            types.TextDocumentItem(
+                uri=path.as_uri(), language_id="yaml", version=1, text=path.read_text()
+            )
+        )
+    )
+    found = await mixed_client.text_document_semantic_tokens_full_async(
+        types.SemanticTokensParams(
+            text_document=types.TextDocumentIdentifier(uri=path.as_uri())
+        )
+    )
+    assert found is not None and found.data
+    # The first token is the `Modules` section key, which decides the file's kind.
+    assert list(found.data[:3]) == [0, 0, len("Modules")]

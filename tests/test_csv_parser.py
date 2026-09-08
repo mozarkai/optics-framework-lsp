@@ -63,7 +63,7 @@ def test_blank_line_ignored_but_whitespace_line_flagged():
         "   \n"
         "b,2\n"
     )
-    assert [(i.kind, i.row) for i in ast.csv_issues] == [("whitespace-only-line", 4)]
+    assert [(i.kind, i.row) for i in ast.issues] == [("csv-whitespace-line", 4)]
     assert [e.name for e in ast.elements] == ["a", "b"]
 
 
@@ -73,9 +73,9 @@ def test_column_count_issues():
         "OnlyOneColumn\n"
         "Case A,Step A,extra,more\n"
     )
-    assert [(i.kind, i.row) for i in ast.csv_issues] == [
-        ("too-few-columns", 2),
-        ("too-many-columns", 3),
+    assert [(i.kind, i.row) for i in ast.issues] == [
+        ("csv-too-few-columns", 2),
+        ("csv-too-many-columns", 3),
     ]
     assert [b.name for b in ast.test_cases] == ["Case A"]
 
@@ -93,7 +93,7 @@ def test_unknown_headers_produce_nothing():
     assert ast.test_cases == []
     assert ast.modules == []
     assert ast.elements == []
-    assert ast.csv_issues == []
+    assert ast.issues == []
 
 
 CAPITALISED = (
@@ -107,7 +107,7 @@ def test_headers_are_matched_case_insensitively():
     ast = parse_csv_sources([("file:///w/e.csv", CAPITALISED)])
     assert [e.name for e in ast.elements] == ["alarm_tab"]
     # Recognised, so it is not left as an unknown file with column complaints.
-    assert ast.csv_issues == []
+    assert ast.issues == []
 
 
 def test_capitalised_modules_and_test_cases_too():

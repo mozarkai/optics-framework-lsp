@@ -11,7 +11,11 @@ import * as clients from './clients';
 import * as mcp from './mcp';
 
 const MIN_PYTHON: [number, number] = [3, 12];
-const SELECTOR: TextDocumentFilter[] = [{ scheme: 'file', pattern: '**/*.csv' }];
+// Every csv and yaml, because the server classifies by what is inside a file rather than by
+// its name. A yaml that is not a suite gets nothing back rather than being claimed.
+const SELECTOR: TextDocumentFilter[] = [
+  { scheme: 'file', pattern: '**/*.{csv,yaml,yml}' },
+];
 // `-S` keeps site-packages out, so the bundled libs on PYTHONPATH are the only ones importable.
 const LAUNCH_ARGS = ['-S', '-m', 'optics_framework_lsp'];
 

@@ -27,7 +27,7 @@ class OpticsLspIntegrationProvider : LspIntegrationProvider, PluginAware {
         file: VirtualFile,
         clientStarter: LspIntegrationProvider.LspClientStarter,
     ) {
-        if (file.extension != "csv") return
+        if (file.extension?.lowercase() !in OpticsLspDescriptor.SUFFIXES) return
 
         when (val python = OpticsPython.resolve()) {
             is OpticsPython.Result.Ok ->

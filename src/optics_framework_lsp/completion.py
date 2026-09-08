@@ -23,9 +23,13 @@ from lsprotocol.types import (
     TextEdit,
 )
 
+from . import yaml_cursor
 from .keyword_catalog import Catalog, Keyword, slug
 from .parser.ast import AST
+from .parser import is_yaml
 from .parser.csv_parser import filled_params
+from .positions import from_utf16, to_utf16
+from .yaml_cursor import YamlCursor
 from .validation import (
     VAR,
     declarations,
@@ -40,6 +44,11 @@ from .validation import (
 
 
 ParamKind = Literal["module", "file", "api"]
+
+# What a yaml holds at the top level, spelt as `read_test_cases` and friends look the
+# keys up. The yaml counterpart of `_HEADERS`: naming the section is what decides what
+# the file is, so it is the one thing worth offering in an empty file.
+_SECTION_KEYS = ("Test Cases", "Modules", "Elements")
 
 # What a param holds, by keyword and position after `module_step`. Anything unlisted
 # holds an element or variable.
@@ -90,8 +99,11 @@ class Cursor:
     def __init__(self, text: str, position: Position) -> None:
         lines = text.splitlines()
         line = lines[position.line] if position.line < len(lines) else ""
-        prefix = line[: position.character]
-        self.paired = line[position.character :].startswith("}")
+        # The client counted the column in utf-16; everything below slices `str`.
+        at = from_utf16(line, position.character)
+        prefix = line[:at]
+        self.source = line
+        self.paired = line[at:].startswith("}")
 
         self.header_line, header = next(
             ((i, row) for i, row in enumerate(lines) if row.strip()), (0, "")
@@ -105,7 +117,7 @@ class Cursor:
         self.column = len(fields) - 1
         self.partial = fields[-1]
         self.line = position.line
-        self.start = position.character - len(self.partial)
+        self.start = at - len(self.partial)
 
     def column_of(self, header: str) -> int | None:
         return self.headers.index(header) if header in self.headers else None
@@ -125,11 +137,19 @@ class Cursor:
         end = self.start + len(self.partial) + (self.paired and text.endswith("}"))
         return TextEdit(
             range=Range(
-                start=Position(line=self.line, character=self.start),
-                end=Position(line=self.line, character=end),
+                start=Position(
+                    line=self.line, character=to_utf16(self.source, self.start)
+                ),
+                end=Position(line=self.line, character=to_utf16(self.source, end)),
             ),
             new_text=text,
         )
+
+
+# Both cursors answer "what is being typed and what should replace it", which is all a
+# completion item needs from one. Everything past that differs: a csv has columns and a
+# yaml has depth.
+AnyCursor = Cursor | YamlCursor
 
 
 def _widen_header(cursor: Cursor, step: int) -> list[TextEdit] | None:
@@ -138,11 +158,12 @@ def _widen_header(cursor: Cursor, step: int) -> list[TextEdit] | None:
         return None
 
     added = "".join(f",param_{i - step}" for i in range(len(cursor.headers), cursor.column + 1))
-    at = Position(line=cursor.header_line, character=len(cursor.header))
+    header = cursor.header
+    at = Position(line=cursor.header_line, character=to_utf16(header, len(header)))
     return [TextEdit(range=Range(start=at, end=at), new_text=added)]
 
 
-def _item(cursor: Cursor, label: str, kind: CompletionItemKind, detail: str, text: str):
+def _item(cursor: AnyCursor, label: str, kind: CompletionItemKind, detail: str, text: str):
     return CompletionItem(
         label=label,
         kind=kind,
@@ -152,7 +173,7 @@ def _item(cursor: Cursor, label: str, kind: CompletionItemKind, detail: str, tex
     )
 
 
-def _modules(cursor: Cursor, ast: AST, prefix: str = "") -> list[CompletionItem]:
+def _modules(cursor: AnyCursor, ast: AST, prefix: str = "") -> list[CompletionItem]:
     return [
         _item(cursor, name, CompletionItemKind.Module, "module", prefix + name)
         for name in sorted({m.name for m in ast.modules})
@@ -160,13 +181,13 @@ def _modules(cursor: Cursor, ast: AST, prefix: str = "") -> list[CompletionItem]
 
 
 def _listing(
-    cursor: Cursor, names: Iterable[str], kind: CompletionItemKind, detail: str
+    cursor: AnyCursor, names: Iterable[str], kind: CompletionItemKind, detail: str
 ) -> list[CompletionItem]:
     """Names offered as they are written."""
     return [_item(cursor, name, kind, detail, name) for name in names]
 
 
-def _variables(cursor: Cursor, ast: AST) -> list[CompletionItem]:
+def _variables(cursor: AnyCursor, ast: AST) -> list[CompletionItem]:
     names = {e.name for e in ast.elements} | declared(ast)
     return [
         _item(cursor, name, CompletionItemKind.Variable, "element", f"${{{name}}}")
@@ -175,18 +196,18 @@ def _variables(cursor: Cursor, ast: AST) -> list[CompletionItem]:
 
 
 def _params(
-    cursor: Cursor,
+    cursor: AnyCursor,
     ast: AST,
     catalog: Catalog | None,
-    step: int,
+    name: str,
+    param: int,
     *,
     data_files: Sequence[str],
     apis: Sequence[str],
 ) -> list[CompletionItem]:
-    """What belongs in a param column, by the keyword its row names."""
-    name = cursor.step_name(step)
-    param = cursor.column - step - 1
-
+    """What belongs in a param slot, by the keyword the step names. Given the name and
+    the index rather than working them out, because a csv counts columns and a yaml
+    counts words."""
     # `Condition` alternates condition, target. A target is always a module, while a
     # condition is either a module, optionally !-inverted, or an expression.
     if name == "condition":
@@ -213,16 +234,111 @@ def _params(
     return _variables(cursor, ast)
 
 
+def _steps(cursor: AnyCursor, ast: AST, catalog: Catalog | None) -> list[CompletionItem]:
+    """What a step may name: any keyword, or any module for a nested call."""
+    items = _modules(cursor, ast)
+    for name, keyword in sorted((catalog or {}).items()):
+        label = name.title()
+        items.append(
+            _item(
+                cursor,
+                label,
+                CompletionItemKind.Keyword,
+                ", ".join(keyword.params) or "no params",
+                label,
+            )
+        )
+    return items
+
+
+def _test_cases(cursor: AnyCursor, ast: AST) -> list[CompletionItem]:
+    """Test cases that exist, plus the lifecycle names not yet used."""
+    names = sorted({t.name for t in ast.test_cases})
+    return _listing(cursor, names, CompletionItemKind.Value, "test case") + [
+        _item(cursor, name, CompletionItemKind.Event, detail, name)
+        for name, detail in _LIFECYCLE.items()
+        if name not in names
+    ]
+
+
+
+def _complete_yaml(
+    text: str,
+    position: Position,
+    ast: AST,
+    catalog: Catalog | None,
+    *,
+    images: Sequence[str],
+    data_files: Sequence[str],
+    apis: Sequence[str],
+) -> list[CompletionItem]:
+    found = yaml_cursor.cursor(text, position, catalog)
+
+    if found.place == "top":
+        # Naming a section is what makes the file a suite, so it is what an empty one
+        # is offered. Only the ones it does not have — and a section spelt in the wrong
+        # case is not one it has, because the reader never finds it.
+        taken = {key for _, key in yaml_cursor.sections(text.splitlines())}
+        return [
+            _item(found, f"{key}:", CompletionItemKind.Struct, "section", f"{key}:")
+            for key in _SECTION_KEYS
+            if key not in taken
+        ]
+
+    if found.section == "test_cases":
+        # A test case's steps are modules; both name slots continue an existing block.
+        if found.place == "step":
+            return _modules(found, ast)
+        return _test_cases(found, ast)
+
+    if found.section == "modules":
+        if found.place != "step":
+            return _modules(found, ast)
+        if found.param < 0:
+            return _steps(found, ast, catalog)
+        return _params(
+            found,
+            ast,
+            catalog,
+            found.step_name,
+            found.param,
+            data_files=data_files,
+            apis=apis,
+        )
+
+    if found.section == "elements":
+        if found.place == "locator":
+            # An id is usually an xpath or literal text, which we cannot guess, but an
+            # image locator is the bare filename of a template in the project.
+            return _listing(found, images, CompletionItemKind.File, "template image")
+        kind = CompletionItemKind.Variable
+        return _listing(found, sorted(undefined(ast)), kind, "used, not defined")
+
+    return []
+
+
 def complete(
     text: str,
     position: Position,
     ast: AST,
     catalog: Catalog | None,
     *,
+    uri: str = "",
     images: Sequence[str] = (),
     data_files: Sequence[str] = (),
     apis: Sequence[str] = (),
 ) -> list[CompletionItem]:
+    if is_yaml(uri):
+        return _complete_yaml(
+            text,
+            position,
+            ast,
+            catalog,
+            images=images,
+            data_files=data_files,
+            apis=apis,
+        )
+
     cursor = Cursor(text, position)
 
     # Nothing is defined yet, so the row being typed is the header that decides the kind.
@@ -233,23 +349,18 @@ def complete(
     step = cursor.column_of("module_step")
 
     if step is not None and cursor.column == step:
-        # A step names a keyword or, for nested modules, another module.
-        items = _modules(cursor, ast)
-        for name, keyword in sorted((catalog or {}).items()):
-            label = name.title()
-            items.append(
-                _item(
-                    cursor,
-                    label,
-                    CompletionItemKind.Keyword,
-                    ", ".join(keyword.params) or "no params",
-                    label,
-                )
-            )
-        return items
+        return _steps(cursor, ast, catalog)
 
     if step is not None and cursor.column > step:
-        items = _params(cursor, ast, catalog, step, data_files=data_files, apis=apis)
+        items = _params(
+            cursor,
+            ast,
+            catalog,
+            cursor.step_name(step),
+            cursor.column - step - 1,
+            data_files=data_files,
+            apis=apis,
+        )
 
         # Accepting a param the header does not cover declares it in the same edit.
         for item in items:
@@ -272,12 +383,7 @@ def complete(
         return _listing(cursor, images, CompletionItemKind.File, "template image")
 
     if cursor.column == cursor.column_of("test_case"):
-        names = sorted({t.name for t in ast.test_cases})
-        return _listing(cursor, names, CompletionItemKind.Value, "test case") + [
-            _item(cursor, name, CompletionItemKind.Event, detail, name)
-            for name, detail in _LIFECYCLE.items()
-            if name not in names
-        ]
+        return _test_cases(cursor, ast)
 
     return []
 
@@ -290,15 +396,33 @@ def _rendered(keyword: Keyword) -> list[str]:
     ]
 
 
-def signature(text: str, position: Position, catalog: Catalog | None) -> SignatureHelp | None:
-    """The keyword's params, with the column the cursor is in marked active."""
+def _signature_at(
+    text: str, position: Position, catalog: Catalog | None, uri: str
+) -> tuple[str, int] | None:
+    """The keyword the cursor is inside the params of, and which param that is."""
+    if is_yaml(uri):
+        found = yaml_cursor.cursor(text, position, catalog)
+        if found.section != "modules" or found.place != "step" or found.param < 0:
+            return None
+        return found.step_name, found.param
+
     cursor = Cursor(text, position)
     step = cursor.column_of("module_step")
-    if not catalog or step is None or cursor.column <= step:
+    if step is None or cursor.column <= step:
+        return None
+    return cursor.step_name(step), cursor.column - step - 1
+
+
+def signature(
+    text: str, position: Position, catalog: Catalog | None, *, uri: str = ""
+) -> SignatureHelp | None:
+    """The keyword's params, with the one the cursor is in marked active."""
+    found = _signature_at(text, position, catalog, uri) if catalog else None
+    if found is None:
         return None
 
-    name = cursor.step_name(step)
-    keyword = catalog.get(name)
+    name, param = found
+    keyword = catalog.get(name) if catalog else None
     if keyword is None:
         return None
 
@@ -313,7 +437,7 @@ def signature(text: str, position: Position, catalog: Catalog | None) -> Signatu
             )
         ],
         active_signature=0,
-        active_parameter=min(cursor.column - step - 1, max(len(keyword.params) - 1, 0)),
+        active_parameter=min(param, max(len(keyword.params) - 1, 0)),
     )
 
 
@@ -324,9 +448,23 @@ def _at(uri: str, row: int) -> Location:
 
 
 def definition(
-    text: str, position: Position, ast: AST, catalog: Catalog | None
+    text: str, position: Position, ast: AST, catalog: Catalog | None, *, uri: str = ""
 ) -> list[Location]:
     """Where the module a step runs, or the elements a param reads, are defined."""
+    if is_yaml(uri):
+        found = yaml_symbol_at(text, position, catalog)
+        if found is None:
+            return []
+
+        kind, name = found
+        if kind == "element":
+            return [_at(e.uri, e.row) for e in ast.elements if e.name == name]
+        if kind == "module":
+            return [_at(m.uri, m.start_row) for m in ast.modules if m.name == name]
+        # A keyword is the framework's, and an image, data file or api is not a name the
+        # suite declares anywhere.
+        return []
+
     cursor = Cursor(text, position)
     step = cursor.column_of("module_step")
     if cursor.column != cursor.column_of("test_step") and (
@@ -398,17 +536,69 @@ def param_symbol(cursor: Cursor, step: int) -> tuple[str, str] | None:
     return (kind, field) if kind else None
 
 
+def _yaml_param_symbol(found: YamlCursor) -> tuple[str, str] | None:
+    """What a yaml step's param names, by the same rules as `param_symbol`. The index is
+    the word's place after the keyword, where a csv counts filled columns."""
+    if names := VAR.findall(found.word):
+        return "element", names[0]
+    if found.param in declares_at(found.step_name, found.params):
+        return "element", found.word
+    if found.param in runs_at(found.step_name, found.params):
+        return "module", found.word.removeprefix("!")
+
+    kind = PARAM_KINDS.get(found.step_name, {}).get(found.param)
+    return (kind, found.word) if kind else None
+
+
+def yaml_symbol_at(
+    text: str, position: Position, catalog: Catalog | None
+) -> tuple[str, str] | None:
+    """What the cursor is on, as a kind and the name to match against. The yaml
+    counterpart of `_symbol_at`: depth and word position where that one has columns.
+
+    Shared with `rename`, so a name resolves the same whether it is being looked up or
+    moved."""
+    found = yaml_cursor.cursor(text, position, catalog)
+    if not found.word:
+        return None
+
+    if found.section == "test_cases":
+        return ("module" if found.place == "step" else "test case"), found.word
+
+    if found.section == "elements":
+        if found.place != "locator":
+            return "element", found.word
+        # Only an image is shared by name; an xpath is written per element.
+        image = found.word.lower().endswith(IMAGE_SUFFIXES)
+        return ("image", found.word) if image else None
+
+    if found.section != "modules":
+        return None
+    if found.place != "step":
+        return "module", found.word
+    if found.param >= 0:
+        return _yaml_param_symbol(found)
+
+    # A keyword beats a same-named module here, as `_execute_single_keyword` resolves.
+    known = slug(found.word) in (catalog or {})
+    return ("keyword" if known else "module"), found.word
+
+
 def references(
     text: str,
     position: Position,
     ast: AST,
     catalog: Catalog | None,
     *,
+    uri: str = "",
     include_declaration: bool = False,
 ) -> list[Location]:
     """Every place the name under the cursor is used, and optionally where it is bound."""
-    cursor = Cursor(text, position)
-    found = _symbol_at(cursor, catalog)
+    found = (
+        yaml_symbol_at(text, position, catalog)
+        if is_yaml(uri)
+        else _symbol_at(Cursor(text, position), catalog)
+    )
     if found is None:
         return []
 
@@ -461,20 +651,36 @@ def references(
     return uses + declared_at if include_declaration else uses
 
 
-def hover(text: str, position: Position, catalog: Catalog | None) -> Hover | None:
-    """A keyword's signature and the framework's own docstring for it."""
+def _hovered(
+    text: str, position: Position, catalog: Catalog | None, uri: str
+) -> str | None:
+    """The step name under the cursor, however the file is written."""
+    if is_yaml(uri):
+        # A step naming a module rather than a keyword comes back as one, and misses
+        # the catalog lookup below just as it would have.
+        found = yaml_symbol_at(text, position, catalog)
+        return found[1] if found and found[0] == "keyword" else None
+
     cursor = Cursor(text, position)
     step = cursor.column_of("module_step")
-    if step is None or cursor.column != step:
+    return cursor.field(step) if step is not None and cursor.column == step else None
+
+
+def hover(
+    text: str, position: Position, catalog: Catalog | None, *, uri: str = ""
+) -> Hover | None:
+    """A keyword's signature and the framework's own docstring for it."""
+    name = _hovered(text, position, catalog, uri)
+    if name is None:
         return None
 
-    keyword = (catalog or {}).get(cursor.step_name(step))
+    keyword = (catalog or {}).get(slug(name))
     if keyword is None:
         return None
 
     # Plain text, because the docstrings are reST: markdown would fold the `:param x:`
     # lines into one paragraph.
-    label = f"{cursor.field(step)}({', '.join(_rendered(keyword))})"
+    label = f"{name}({', '.join(_rendered(keyword))})"
     return Hover(
         contents=MarkupContent(
             kind=MarkupKind.PlainText,

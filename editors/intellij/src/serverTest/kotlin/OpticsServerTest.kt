@@ -16,8 +16,33 @@ class OpticsServerTest {
 
     @Test
     fun `publishes a diagnostic for a step naming no module`() {
+        val diagnostics = publishedFor("test_cases.csv")
+        assertTrue(diagnostics.contains("Missing Module")) {
+            "expected a diagnostic naming the unknown module, got: $diagnostics"
+        }
+        // Row 3 of the fixture, zero-based.
+        assertTrue(Regex(""""line"\s*:\s*2""").containsMatchIn(diagnostics)) {
+            "expected the diagnostic on line 2, got: $diagnostics"
+        }
+    }
+
+    @Test
+    fun `publishes a diagnostic for a yaml step holding no variable`() {
+        val diagnostics = publishedFor("suite.yaml")
+        assertTrue(diagnostics.contains("Sleep 5")) {
+            "expected a diagnostic naming the swallowed param, got: $diagnostics"
+        }
+        // Row 5 of the fixture, zero-based.
+        assertTrue(Regex(""""line"\s*:\s*4""").containsMatchIn(diagnostics)) {
+            "expected the diagnostic on line 4, got: $diagnostics"
+        }
+    }
+
+    /** Starts the shipped server on the fixture, opens one of its files, and returns the first
+     * publishDiagnostics frame for that file which carries a finding. */
+    private fun publishedFor(name: String): String {
         val fixture = Path.of(System.getProperty("optics.fixture"))
-        val testCases = fixture.resolve("test_cases.csv")
+        val opened = fixture.resolve(name)
 
         val process = ProcessBuilder(python(), "-S", "-m", "optics_framework_lsp")
             .directory(fixture.toFile())
@@ -45,18 +70,11 @@ class OpticsServerTest {
             send(process, """{"jsonrpc":"2.0","method":"initialized","params":{}}""")
             send(
                 process, """{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{
-                  "textDocument":{"uri":"${testCases.toUri()}","languageId":"plaintext",
-                  "version":1,"text":${quote(testCases.readText())}}}}"""
+                  "textDocument":{"uri":"${opened.toUri()}","languageId":"plaintext",
+                  "version":1,"text":${quote(opened.readText())}}}}"""
             )
 
-            val diagnostics = awaitDiagnostics(frames, testCases)
-            assertTrue(diagnostics.contains("Missing Module")) {
-                "expected a diagnostic naming the unknown module, got: $diagnostics"
-            }
-            // Row 3 of the fixture, zero-based.
-            assertTrue(Regex(""""line"\s*:\s*2""").containsMatchIn(diagnostics)) {
-                "expected the diagnostic on line 2, got: $diagnostics"
-            }
+            return awaitDiagnostics(frames, opened)
         } finally {
             process.destroyForcibly()
         }
@@ -122,7 +140,7 @@ class OpticsServerTest {
         }
     }
 
-    /** Enough escaping for the one CSV body this test sends; the fixture is ours. */
+    /** Enough escaping for the fixture bodies this test sends; the fixture is ours. */
     private fun quote(text: String): String =
         "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
 }

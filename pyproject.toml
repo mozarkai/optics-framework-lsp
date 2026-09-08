@@ -1,7 +1,7 @@
 [project]
 name = "optics-framework-lsp"
 version = "1.1.0"
-description = "Language server and linter for optics-framework csv test suites"
+description = "Language server and linter for optics-framework csv and yaml test suites"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -9,7 +9,7 @@ authors = [
     { name = "Bishwa Bhusan Saha", email = "77796630+kun-codes@users.noreply.github.com" }
 ]
 requires-python = ">=3.12"
-keywords = ["lsp", "language-server", "optics-framework", "linter", "test-automation", "csv"]
+keywords = ["lsp", "language-server", "optics-framework", "linter", "test-automation", "csv", "yaml"]
 classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",

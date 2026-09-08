@@ -63,6 +63,7 @@ make -C .. bundled/libs/.installed
 
 ## How it attaches to files
 
-`isSupportedFile` matches every `*.csv`. No `FileType` or `Language` is declared, so the CSV editor
-you already use is untouched. Files that are not optics suites produce nothing, because the server
-classifies each one by its header row.
+`isSupportedFile` matches every `*.csv`, `*.yaml` and `*.yml`. No `FileType` or `Language` is
+declared, so the CSV and YAML editors you already use are untouched. Files that are not optics
+suites produce nothing, because the server classifies each one by its contents: a csv's header
+row, a yaml's top-level keys.

@@ -1,10 +1,10 @@
 # GENERATED — do not edit. Run `python scripts/update_catalog.py` to refresh.
 #
-# Keyword signatures read from optics-framework 1.9.3. `required` counts the leading
+# Keyword signatures read from optics-framework 1.10.2. `required` counts the leading
 # positional params with no default; `variadic` means the keyword takes `*args`, so any
 # number of params is legal.
 
-OPTICS_VERSION = '1.9.3'
+OPTICS_VERSION = '1.10.2'
 
 KEYWORDS: dict[str, dict] = {
     'assert equality': {
@@ -19,14 +19,14 @@ KEYWORDS: dict[str, dict] = {
         'variadic': False,
         'params': ['elements', 'timeout_str', 'rule', 'event_name', 'fail'],
         'defaults': {'timeout_str': "'30'", 'rule': "'any'", 'event_name': 'None', 'fail': 'True'},
-        'doc': 'Asserts the presence of elements -- anywhere in the page/DOM, visible or not.\n\n:param elements: Comma-separated string of elements to check (Image templates, OCR templates, or XPaths).\n:param timeout: The time to wait for the elements in seconds.\n:param rule: The rule for verification ("any" or "all").\n:param event_name: The name of the event associated with the assertion, if any.\n:return: True if the rule is satisfied, False otherwise.',
+        'doc': 'Asserts the presence of elements -- anywhere in the page/DOM, visible or not.\n\n:param elements: Comma-separated string of elements to check (Image templates, OCR templates, or XPaths).\n:param timeout_str: The time to wait for the elements in seconds.\n:param rule: The rule for verification ("any" or "all").\n:param event_name: The name of the event associated with the assertion, if any.\n:param fail: If True, raise on failure; if False, return False instead.\n:return: True if the rule is satisfied, False otherwise.',
     },
     'assert visibility': {
         'required': 1,
         'variadic': False,
         'params': ['elements', 'timeout_str', 'rule', 'event_name', 'fail'],
         'defaults': {'timeout_str': "'30'", 'rule': "'any'", 'event_name': 'None', 'fail': 'True'},
-        'doc': 'Asserts that elements are actually rendered/visible on screen right now -- distinct\nfrom :meth:`assert_presence`, which reports found even for elements that exist in\nthe page/DOM but are off-screen (e.g. not yet scrolled into view).\n\n:param elements: Comma-separated string of elements to check (Image templates, OCR templates, or XPaths).\n:param timeout_str: The time to wait for the elements to become visible, in seconds.\n:param rule: The rule for verification ("any" or "all").\n:param event_name: The name of the event associated with the assertion, if any.\n:return: True if the rule is satisfied, False otherwise.',
+        'doc': 'Asserts that elements are actually rendered/visible on screen right now -- distinct\nfrom :meth:`assert_presence`, which reports found even for elements that exist in\nthe page/DOM but are off-screen (e.g. not yet scrolled into view).\n\n:param elements: Comma-separated string of elements to check (Image templates, OCR templates, or XPaths).\n:param timeout_str: The time to wait for the elements to become visible, in seconds.\n:param rule: The rule for verification ("any" or "all").\n:param event_name: The name of the event associated with the assertion, if any.\n:param fail: If True, raise on failure; if False, return False instead.\n:return: True if the rule is satisfied, False otherwise.',
     },
     'capture pagesource': {
         'required': 0,
@@ -45,9 +45,9 @@ KEYWORDS: dict[str, dict] = {
     'clear element text': {
         'required': 1,
         'variadic': False,
-        'params': ['element', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name'],
-        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
-        'doc': 'Clear text from a specified element.\n\n:param element: The target element (Image template, OCR template, or XPath).\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the action.',
+        'params': ['element', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name', 'index'],
+        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None', 'index': "'0'"},
+        'doc': 'Clear text from a specified element.\n\n:param element: The target element (Image template, OCR template, or XPath).\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the action.\n:param index: Index of the element if multiple matches are found.',
     },
     'close and terminate app': {
         'required': 0,
@@ -61,14 +61,14 @@ KEYWORDS: dict[str, dict] = {
         'variadic': True,
         'params': [],
         'defaults': {},
-        'doc': 'Evaluates conditions and executes corresponding targets.',
+        'doc': 'Evaluates conditions and executes corresponding targets.\n\n:param args: Condition-target pairs, optionally ending with an else target:\n    ``"cond1", "target1", "cond2", "target2", [else_target]``. A condition is a\n    module name (prefix ``!`` to invert) or an expression.\n:return: Result of the matched target module, or None if nothing matched.',
     },
     'date evaluate': {
         'required': 3,
         'variadic': False,
         'params': ['param1', 'param2', 'param3', 'param4'],
         'defaults': {'param4': "'%d %B'"},
-        'doc': 'Evaluates a date expression based on an input date and stores the result in session.elements.\n\nArgs:\n    param1 (str): The variable name (placeholder) where the evaluated date result will be stored.\n    param2 (str): The input date string (e.g., "04/25/2025" or "2025-04-25"). Format is auto-detected.\n    param3 (str): The date expression to evaluate, such as "+1 day", "-2 days", or "today".\n    param4 (Optional[str]): The output format for the evaluated date (default is "%d %B", e.g., "26 April").\n\nReturns:\n    str: The resulting evaluated and formatted date string.\n\nRaises:\n    ValueError: If the session is not present, the input date format cannot be detected,\n                or the expression format is invalid.\n\nExample:\n    date_evaluate("tomorrow", "04/25/2025", "+1 day")\n    ➔ Stores "26 April" in session.elements["tomorrow"]',
+        'doc': 'Evaluates a date expression based on an input date and stores the result in session.elements.\n\n:param param1: The variable name (placeholder) where the evaluated date result will be stored.\n:param param2: The input date string (e.g., ``"04/25/2025"`` or ``"2025-04-25"``). Format is auto-detected.\n:param param3: The date expression to evaluate, such as ``"+1 day"``, ``"-2 days"``, or ``"today"``.\n:param param4: The output format for the evaluated date (default is ``"%d %B"``, e.g., ``"26 April"``).\n:returns: The resulting evaluated and formatted date string.\n:raises OpticsError: If the session is not present, the input date format cannot be detected,\n    or the expression format is invalid.\n\nExample:\n\n    date_evaluate("tomorrow", "04/25/2025", "+1 day")\n    -> Stores "26 April" in session.elements["tomorrow"]',
     },
     'detect and press': {
         'required': 1,
@@ -80,16 +80,16 @@ KEYWORDS: dict[str, dict] = {
     'enter number': {
         'required': 2,
         'variadic': False,
-        'params': ['element', 'number', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name'],
-        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
-        'doc': 'Enter a specified number into an element.\n\n:param element: The target element (Image template, OCR template, or XPath).\n:param number: The number to be entered.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the input.',
+        'params': ['element', 'number', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name', 'index'],
+        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None', 'index': "'0'"},
+        'doc': 'Enter a specified number into an element.\n\n:param element: The target element (Image template, OCR template, or XPath).\n:param number: The number to be entered.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the input.\n:param index: Index of the element if multiple matches are found.',
     },
     'enter text': {
         'required': 2,
         'variadic': False,
-        'params': ['element', 'text', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name'],
-        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
-        'doc': 'Enter text into a specified element.\n\n:param element: The target element (Image template, OCR template, or XPath).\n:param text: The text to be entered.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the input.',
+        'params': ['element', 'text', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name', 'index'],
+        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None', 'index': "'0'"},
+        'doc': 'Enter text into a specified element.\n\n:param element: The target element (Image template, OCR template, or XPath).\n:param text: The text to be entered.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the input.\n:param index: Index of the element if multiple matches are found.',
     },
     'enter text direct': {
         'required': 1,
@@ -103,28 +103,28 @@ KEYWORDS: dict[str, dict] = {
         'variadic': False,
         'params': ['text_input', 'event_name'],
         'defaults': {'event_name': 'None'},
-        'doc': "Enter text or press a special key using the keyboard.\n\nIf the input is a string that includes angle brackets (e.g., '<enter>'),\nthe text between the brackets will be interpreted as a special key name and mapped accordingly.\n\n:param input: The text or special key identifier to send.\n:param event_name: Optional event label for logging.",
+        'doc': "Enter text or press a special key using the keyboard.\n\nIf the input is a string that includes angle brackets (e.g., '<enter>'),\nthe text between the brackets will be interpreted as a special key name and mapped accordingly.\n\n:param text_input: The text or special key identifier to send.\n:param event_name: Optional event label for logging.",
     },
     'evaluate': {
         'required': 2,
         'variadic': False,
         'params': ['param1', 'param2'],
         'defaults': {},
-        'doc': 'Evaluates an expression and stores the result in session.elements.',
+        'doc': 'Evaluates an expression and stores the result in session.elements.\n\n:param param1: Variable name to store the result under, e.g. ``${result}``.\n:param param2: Expression to evaluate; ``${var}`` refs are substituted first,\n    then run through a restricted eval (arithmetic, comparisons, ternary).\n:return: The evaluated result (also stored as a string in session.elements).',
     },
     'execute module': {
         'required': 1,
         'variadic': False,
         'params': ['module_name'],
         'defaults': {},
-        'doc': "Executes a module's keywords using the session's keyword_map.\n\nNot exposed on the Optics SDK — session.modules is only populated by\nCSV/YAML-driven execution; SDK/Robot Framework users should call keywords\ndirectly or write a real function/keyword instead.",
+        'doc': "Executes a module's keywords using the session's keyword_map.\n\nNot exposed on the Optics SDK — session.modules is only populated by\nCSV/YAML-driven execution; SDK/Robot Framework users should call keywords\ndirectly or write a real function/keyword instead.\n\n:param module_name: The module to execute.\n:return: Results of each keyword call in the module, in order.",
     },
     'execute script': {
         'required': 1,
         'variadic': False,
         'params': ['script_or_json', 'event_name'],
         'defaults': {'event_name': 'None'},
-        'doc': 'Execute JavaScript/script in the current context.\n\n:param script_or_json: The JavaScript code/script command, or a JSON string containing\n                       {"script": "...", "args": {...}} or {"script": "..."}.\n                       Examples:\n                       - "mobile:pressKey" (plain script)\n                       - \'{"script": "mobile:pressKey", "args": {"keycode": 3}}\' (JSON with args)\n                       - \'{"script": "mobile:clear"}\' (JSON without args)\n:type script_or_json: str\n:param event_name: The event triggering the script execution, if any.\n:type event_name: Optional[str]\n:return: The result of the script execution.\n:rtype: Any',
+        'doc': 'Execute JavaScript/script in the current context.\n\n:param script_or_json: The JavaScript code/script command, or a JSON string containing\n                       {"script": "...", "args": {...}} or {"script": "..."}.\n                       Examples:\n                       - "mobile:pressKey" (plain script)\n                       - \'{"script": "mobile:pressKey", "args": {"keycode": 3}}\' (JSON with args)\n                       - \'{"script": "mobile:clear"}\' (JSON without args)\n:param event_name: The event triggering the script execution, if any.\n:return: The result of the script execution.\n:rtype: Any',
     },
     'force terminate app': {
         'required': 1,
@@ -138,7 +138,7 @@ KEYWORDS: dict[str, dict] = {
         'variadic': False,
         'params': ['app_package'],
         'defaults': {'app_package': 'None'},
-        'doc': 'Gets the version of the application.\n\n:return: The version of the application, or None if not available.',
+        'doc': 'Gets the version of the application.\n\n:param app_package: The app package/bundle ID to check, or the current app if None.\n:return: The version of the application, or None if not available.',
     },
     'get driver session id': {
         'required': 0,
@@ -152,7 +152,7 @@ KEYWORDS: dict[str, dict] = {
         'variadic': False,
         'params': ['filter_config'],
         'defaults': {'filter_config': 'None'},
-        'doc': 'Retrieves a list of interactive elements on the current screen.\n\nXPath and text fields are converted to one-line, CSV-friendly form (newlines\nas \\n, tabs as \\t, etc.) so output can be pasted into elements.csv or similar.\nOn Appium sources, element bounds are returned in the screenshot\'s pixel space.\n\n:param filter_config: Optional list of filter types (e.g., ["buttons", "inputs"]).\n:type filter_config: Optional[List[str]]\n:return: A list of interactive elements.',
+        'doc': 'Retrieves a list of interactive elements on the current screen.\n\nXPath and text fields are converted to one-line, CSV-friendly form (newlines\nas \\n, tabs as \\t, etc.) so output can be pasted into elements.csv or similar.\nOn Appium sources, element bounds are returned in the screenshot\'s pixel space.\n\n:param filter_config: Optional list of filter types (e.g., ["buttons", "inputs"]).\n:return: A list of interactive elements.',
     },
     'get screen elements': {
         'required': 0,
@@ -164,9 +164,9 @@ KEYWORDS: dict[str, dict] = {
     'get text': {
         'required': 1,
         'variadic': False,
-        'params': ['element'],
-        'defaults': {},
-        'doc': 'Get the text from a specified element.\n\n:param element: The target element (Image template, OCR template, or XPath).\n:return: The text from the element or None if not supported.',
+        'params': ['element', 'index', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height'],
+        'defaults': {'index': "'0'", 'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'"},
+        'doc': 'Get the text from a specified element.\n\n:param element: The target element (Image template, OCR template, or XPath).\n:param index: Index of the element if multiple matches are found.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:return: The text from the element or None if not supported.',
     },
     'initialise setup': {
         'required': 0,
@@ -180,7 +180,7 @@ KEYWORDS: dict[str, dict] = {
         'variadic': False,
         'params': ['api_identifier'],
         'defaults': {},
-        'doc': "Invokes an API call based on a definition from the session's API data.",
+        'doc': "Invokes an API call based on a definition from the session's API data.\n\n:param api_identifier: API to call, in ``collection.api_name`` form.",
     },
     'is element': {
         'required': 3,
@@ -194,14 +194,14 @@ KEYWORDS: dict[str, dict] = {
         'variadic': False,
         'params': ['app_identifier', 'app_activity', 'event_name'],
         'defaults': {'app_identifier': 'None', 'app_activity': 'None', 'event_name': 'None'},
-        'doc': 'Launches the specified application.\n\n:param event_name: The event triggering the app launch, if any.',
+        'doc': 'Launches the specified application.\n\n:param app_identifier: The app identifier (package name for Android, bundle ID for iOS).\n:param app_activity: The app activity to launch (Android only).\n:param event_name: The event triggering the app launch, if any.',
     },
     'launch other app': {
         'required': 1,
         'variadic': False,
         'params': ['app_name', 'event_name'],
         'defaults': {'event_name': 'None'},
-        'doc': 'Starts another application.\n\n:param package_name: The package name of the application.\n:param event_name: The event triggering the app start, if any.',
+        'doc': 'Starts another application.\n\n:param app_name: The package name of the application.\n:param event_name: The event triggering the app start, if any.',
     },
     'press by coordinates': {
         'required': 2,
@@ -220,9 +220,9 @@ KEYWORDS: dict[str, dict] = {
     'press checkbox': {
         'required': 1,
         'variadic': False,
-        'params': ['element', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name'],
-        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
-        'doc': 'Press a specified checkbox element.\n\n.. deprecated:: Deprecated alias of :meth:`press_element` — use ``Press Element`` directly.\n\n:param element: The checkbox element (Image template, OCR template, or XPath).\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the press.',
+        'params': ['element', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name', 'index'],
+        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None', 'index': "'0'"},
+        'doc': 'Press a specified checkbox element.\n\n.. deprecated:: Deprecated alias of :meth:`press_element` — use ``Press Element`` directly.\n\n:param element: The checkbox element (Image template, OCR template, or XPath).\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the press.\n:param index: Index of the element if multiple matches are found.',
     },
     'press element': {
         'required': 1,
@@ -241,23 +241,23 @@ KEYWORDS: dict[str, dict] = {
     'press radio button': {
         'required': 1,
         'variadic': False,
-        'params': ['element', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name'],
-        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
-        'doc': 'Press a specified radio button.\n\n.. deprecated:: Deprecated alias of :meth:`press_element` — use ``Press Element`` directly.\n\n:param element: The radio button element (Image template, OCR template, or XPath).\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the press.',
+        'params': ['element', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name', 'index'],
+        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None', 'index': "'0'"},
+        'doc': 'Press a specified radio button.\n\n.. deprecated:: Deprecated alias of :meth:`press_element` — use ``Press Element`` directly.\n\n:param element: The radio button element (Image template, OCR template, or XPath).\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the press.\n:param index: Index of the element if multiple matches are found.',
     },
     'read data': {
         'required': 2,
         'variadic': False,
         'params': ['input_element', 'file_path', 'query'],
         'defaults': {'query': "''"},
-        'doc': 'Reads tabular data from a CSV file, JSON file, environment variable, or a 2D list,\napplies optional filtering and column selection, and stores the result in the session\'s elements.\n\nArgs:\n    input_element: Variable name where the result is stored (e.g. `${data}`). Prefer `${name}` form.\n    file_path: Data source. One of: (1) path to a `.csv` or `.json` file; (2) string\n        ``ENV:VAR_NAME`` to use an environment variable (value parsed as JSON, CSV, or plain string);\n        (3) a 2D list with first row as headers (Python API only).\n    query: Optional semicolon-separated parts: ``select=col1,col2`` and/or filter expressions\n        (pandas-style). Any ``${varname}`` in the query is resolved from `session.elements` before\n        evaluation. Default ``""``.\n\nReturns:\n    The stored value as a list (or list of lists for multi-row results). Also writes into\n    `session.elements` under the name derived from `input_element`.',
+        'doc': 'Reads tabular data from a CSV file, JSON file, environment variable, or a 2D list,\napplies optional filtering and column selection, and stores the result in the session\'s elements.\n\n:param input_element: Variable name where the result is stored (e.g. ``${data}``). Prefer ``${name}`` form.\n:param file_path: Data source. One of: (1) path to a ``.csv`` or ``.json`` file; (2) string\n    ``ENV:VAR_NAME`` to use an environment variable (value parsed as JSON, CSV, or plain string);\n    (3) a 2D list with first row as headers (Python API only).\n:param query: Optional semicolon-separated parts: ``select=col1,col2`` and/or filter expressions\n    (pandas-style). Any ``${varname}`` in the query is resolved from `session.elements` before\n    evaluation. Default ``""``.\n:returns: The stored value as a list (or list of lists for multi-row results). Also writes into\n    `session.elements` under the name derived from `input_element`.',
     },
     'run loop': {
         'required': 1,
         'variadic': True,
         'params': ['target'],
         'defaults': {},
-        'doc': 'Runs a loop over a target module, either by count or with variables.',
+        'doc': 'Runs a loop over a target module, either by count or with variables.\n\n:param target: The module name to execute in the loop.\n:param args: A single count (e.g. ``"5"``), or variable-iterable pairs\n    (e.g. ``"${user}", "a|b|c"``) to iterate one value per run.\n:return: One result list per iteration.',
     },
     'scroll': {
         'required': 1,
@@ -269,9 +269,9 @@ KEYWORDS: dict[str, dict] = {
     'scroll from element': {
         'required': 3,
         'variadic': False,
-        'params': ['element', 'direction', 'scroll_length', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name'],
-        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
-        'doc': 'Perform a scroll action starting from a specified element.\n\n:param element: The element to scroll from (Image template, OCR template, or XPath).\n:param direction: The scroll direction (up, down, left, right).\n:param scroll_length: The length of the scroll.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the scroll.',
+        'params': ['element', 'direction', 'scroll_length', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name', 'index'],
+        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None', 'index': "'0'"},
+        'doc': 'Perform a scroll action starting from a specified element.\n\n:param element: The element to scroll from (Image template, OCR template, or XPath).\n:param direction: The scroll direction (up, down, left, right).\n:param scroll_length: The length of the scroll.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the scroll.\n:param index: Index of the element if multiple matches are found.',
     },
     'scroll until element appears': {
         'required': 3,
@@ -318,16 +318,16 @@ KEYWORDS: dict[str, dict] = {
     'swipe from element': {
         'required': 3,
         'variadic': False,
-        'params': ['element', 'direction', 'swipe_length', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name'],
-        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
-        'doc': 'Perform a swipe action starting from a specified element.\n\n:param element: The element to swipe from (Image template, OCR template, or XPath).\n:param direction: The swipe direction (up, down, left, right).\n:param swipe_length: The length of the swipe.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the swipe.',
+        'params': ['element', 'direction', 'swipe_length', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name', 'index'],
+        'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None', 'index': "'0'"},
+        'doc': 'Perform a swipe action starting from a specified element.\n\n:param element: The element to swipe from (Image template, OCR template, or XPath).\n:param direction: The swipe direction (up, down, left, right).\n:param swipe_length: The length of the swipe.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the swipe.\n:param index: Index of the element if multiple matches are found.',
     },
     'swipe seekbar to right android': {
         'required': 1,
         'variadic': False,
         'params': ['element', 'event_name'],
         'defaults': {'event_name': 'None'},
-        'doc': 'Swipe a seekbar to the right.\n\n.. deprecated:: Deprecated; prefer :meth:`swipe_from_element` / :meth:`swipe`.\n\n:param element: The seekbar element (Image template, OCR template, or XPath).',
+        'doc': 'Swipe a seekbar to the right.\n\n.. deprecated:: Deprecated; prefer :meth:`swipe_from_element` / :meth:`swipe`.\n\n:param element: The seekbar element (Image template, OCR template, or XPath).\n:param event_name: The event triggering the swipe.',
     },
     'swipe until element appears': {
         'required': 3,

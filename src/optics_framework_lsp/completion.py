@@ -66,6 +66,23 @@ PARAM_VALUES = {
     "direction": ["up", "down", "left", "right"],
     "rule": ["any", "all"],
     "element_state": ["visible", "invisible", "enabled", "disabled"],
+    "fail": ["True", "False"],
+    # For Get Interactive Elements keyword. The full set is in `expose_api.py`, not
+    # the keyword's own docstring, which shows two.
+    "filter_config": ["all", "interactive", "buttons", "inputs", "images", "text"],
+}
+
+# Params holding a literal, not a name the project defines: everything unlisted falls
+# through to the elements and bound variables.
+_LITERAL = {
+    "aoi_height", "aoi_width", "aoi_x", "aoi_y",
+    "coor_x", "coor_y", "duration", "event_name", "index", "keycode", "number",
+    "offset_x", "offset_y", "percent_x", "percent_y",
+    "repeat", "scroll_length", "swipe_length", "timeout", "timeout_str",
+    # An app the device knows, not a name the project defines.
+    "app_activity", "app_identifier", "app_name", "app_package",
+    # `date_evaluate`'s output format, a strftime string like `%d %B`.
+    "param4",
 }
 
 
@@ -228,8 +245,13 @@ def _params(
     # than by listing every keyword that happens to take a `direction`.
     keyword = (catalog or {}).get(name)
     names = keyword.params if keyword else []
-    if values := PARAM_VALUES.get(names[param] if param < len(names) else ""):
+    param_name = names[param] if param < len(names) else ""
+    if values := PARAM_VALUES.get(param_name):
         return _listing(cursor, values, CompletionItemKind.EnumMember, "value")
+
+    # A yaml writes a number as `Sleep ${five}`, so keep the elements reachable behind `$`.
+    if param_name in _LITERAL and not cursor.partial.startswith("$"):
+        return []
 
     return _variables(cursor, ast)
 
@@ -352,12 +374,13 @@ def complete(
         return _steps(cursor, ast, catalog)
 
     if step is not None and cursor.column > step:
+        # A blank holds no place, so the runner's index is the filled count, not the column.
         items = _params(
             cursor,
             ast,
             catalog,
             cursor.step_name(step),
-            cursor.column - step - 1,
+            sum(1 for at in filled_params(cursor.fields, cursor.headers) if at < cursor.column),
             data_files=data_files,
             apis=apis,
         )

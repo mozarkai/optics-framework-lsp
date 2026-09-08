@@ -67,10 +67,12 @@ def test_analyzed_names_the_kind_and_skipped_names_the_rest():
     assert body["analyzed"] == {
         "t.csv": "test_cases", "m.csv": "modules",
         "e.csv": "elements", "x.csv": "error_definitions",
+        # An api file is read by the runner too, so it is analysed rather than skipped.
+        "apis.yaml": "api",
     }
-    # An unrecognised csv and a non-csv are both skipped, and both must be visible: the
-    # framework ignores them too, so silence would read as a clean file.
-    assert body["skipped"] == ["apis.yaml", "users.csv"]
+    # An unrecognised file is skipped whatever it is written as, and must be visible:
+    # the framework ignores it too, so silence would read as a clean file.
+    assert body["skipped"] == ["users.csv"]
 
 
 def test_only_csv_files_are_read_as_csv():

@@ -26,10 +26,21 @@ class OpticsLspDescriptor(project: Project, private val python: Path) :
          * importable one.
          */
         val LAUNCH_ARGS = listOf("-S", "-m", "optics_framework_lsp")
+
+        /**
+         * What a suite may be written as, matching the server's own gate and
+         * `find_files`. Shared with [OpticsLspIntegrationProvider] so one list decides.
+         */
+        val SUFFIXES = setOf("csv", "yaml", "yml")
     }
 
-    /** Every CSV: the server classifies by header row, so narrowing by name would hide real suites. */
-    override fun isSupportedFile(file: VirtualFile): Boolean = file.extension == "csv"
+    /**
+     * Every csv and yaml: the server classifies by what is inside the file, so narrowing by
+     * name would hide real suites. A yaml that is not one — a compose file, a CI workflow —
+     * simply gets nothing back rather than being claimed.
+     */
+    override fun isSupportedFile(file: VirtualFile): Boolean =
+        file.extension?.lowercase() in SUFFIXES
 
     override fun createCommandLine(): GeneralCommandLine =
         GeneralCommandLine(listOf(python.toString()) + LAUNCH_ARGS)

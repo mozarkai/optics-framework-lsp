@@ -3,6 +3,12 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 suite('optics-framework-lsp', () => {
+  suiteSetup(async () => {
+    const extension = vscode.extensions.getExtension('mozarkai.optics-framework-lsp');
+    assert.ok(extension, 'expected the extension under test to be installed');
+    await extension!.activate();
+  });
+
   test('reports a diagnostic for a step naming no module or keyword', async () => {
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, 'expected the broken-suite fixture to be open as the workspace');

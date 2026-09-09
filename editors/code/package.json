@@ -43,7 +43,7 @@
       },
       {
         "command": "optics.mcp.configure",
-        "title": "Configure MCP Server for Claude Code",
+        "title": "Configure LSP MCP Server for Claude Code",
         "category": "Optics"
       }
     ],

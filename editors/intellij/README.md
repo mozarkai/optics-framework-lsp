@@ -40,7 +40,7 @@ Note the build numbers rather than a bare `261`: 2026.1 itself is 261.22158.277 
 
 ## AI agents
 
-**Tools | Configure Optics MCP Server** offers the server to an AI agent over MCP, so it can ask
+**Tools | Configure Optics LSP MCP Server** offers the server to an AI agent over MCP, so it can ask
 about the whole project rather than only the open files. The bridge is
 [`agent-lsp`](https://github.com/blackwell-systems/agent-lsp), downloaded on first use; set a
 binary under **Settings | Tools | Optics Framework** to skip that.

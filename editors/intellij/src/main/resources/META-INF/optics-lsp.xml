@@ -17,7 +17,7 @@
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>
     <action id="optics.mcp.configure" class="ai.mozark.optics.lsp.ConfigureMcpAction"
-            text="Configure Optics MCP Server"
+            text="Configure Optics LSP MCP Server"
             description="Fetch the agent-lsp bridge, register it with the AI agents on this machine, and copy an MCP client entry to the clipboard">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>

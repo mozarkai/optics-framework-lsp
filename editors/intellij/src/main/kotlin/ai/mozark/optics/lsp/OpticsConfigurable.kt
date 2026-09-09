@@ -24,7 +24,7 @@ class OpticsConfigurable : BoundConfigurable("Optics Framework") {
                 .align(AlignX.FILL)
                 .comment(
                     "agent-lsp, which offers the server to AI agents. Leave empty to download it " +
-                        "when Tools | Configure Optics MCP Server is first used."
+                        "when Tools | Configure Optics LSP MCP Server is first used."
                 )
         }
     }

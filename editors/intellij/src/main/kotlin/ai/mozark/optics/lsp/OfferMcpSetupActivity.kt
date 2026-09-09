@@ -25,8 +25,8 @@ class OfferMcpSetupActivity : ProjectActivity {
             .getNotificationGroup("Optics")
             .createNotification(
                 "Optics: set up your AI agent?",
-                "The language server can answer an agent's questions about this project over " +
-                    "MCP, and install a skill telling it where the optics documentation is.",
+                "The Optics LSP MCP server can answer an agent's questions about this project, " +
+                    "and a skill tells it where the optics documentation is.",
                 NotificationType.INFORMATION,
             )
             .addAction(

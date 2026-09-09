@@ -11,7 +11,7 @@ package ai.mozark.optics.lsp
 object OpticsMcpConfig {
 
     /** The name every client knows the server by. */
-    const val NAME = "optics"
+    const val NAME = "optics-lsp"
 
     /**
      * The language id agent-lsp routes under. Deliberately not [NAME]: the two appear side by side

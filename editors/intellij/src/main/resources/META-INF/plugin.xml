@@ -9,7 +9,7 @@
     <a href="https://github.com/mozarkai/optics-framework">optics-framework</a> CSV test suites.
     <p>
     Everything is project-wide: a name defined in one CSV resolves references in every other file
-    in the project. <b>Tools | Configure Optics MCP Server</b> offers the same answers to an AI
+    in the project. <b>Tools | Configure Optics LSP MCP Server</b> offers the same answers to an AI
     agent over MCP.
     <p>
     Requires Python 3.12 or newer on PATH, or configured under

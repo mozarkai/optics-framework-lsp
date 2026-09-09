@@ -27,8 +27,8 @@ The extension also offers the server over MCP, so an agent can ask it about the 
 rather than only the open files. It appears under **MCP Servers**, and Copilot needs no setup. The
 bridge is [`agent-lsp`](https://github.com/blackwell-systems/agent-lsp), downloaded on first use.
 
-Claude Code reads its own config, so for that one run **Optics: Configure MCP Server for Claude
-Code** and pick global or project. It also installs a skill telling the agent where the optics
+Claude Code reads its own config, so for that one run **Optics: Configure LSP MCP Server for
+Claude Code** and pick global or project. It also installs a skill telling the agent where the optics
 documentation is, for whichever of Claude Code, Cursor and the Gemini CLI you have.
 
 ## Settings
@@ -43,7 +43,7 @@ documentation is, for whichever of Claude Code, Cursor and the Gemini CLI you ha
 ## Commands
 
 - **Optics: Restart Language Server**
-- **Optics: Configure MCP Server for Claude Code**
+- **Optics: Configure LSP MCP Server for Claude Code**
 
 ## License
 

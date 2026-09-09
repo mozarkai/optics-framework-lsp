@@ -79,7 +79,7 @@ export async function pickScope(): Promise<Scope | undefined> {
         scope: 'project' as Scope,
       },
     ],
-    { title: 'Add the Optics MCP server to Claude Code', ignoreFocusOut: true }
+    { title: 'Add the Optics LSP MCP server to Claude Code', ignoreFocusOut: true }
   );
   return choice?.scope;
 }

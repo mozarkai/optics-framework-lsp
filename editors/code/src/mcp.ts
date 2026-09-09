@@ -27,7 +27,7 @@ const RELEASE = `https://github.com/blackwell-systems/agent-lsp/releases/downloa
 // The name every client knows the server by, and the language id agent-lsp routes under. Kept
 // distinct: the two appear side by side in a client's server list, and the same word twice reads
 // as two servers.
-export const NAME = 'optics';
+export const NAME = 'optics-lsp';
 const LANGUAGE = 'optics-csv';
 
 const ASSETS: Record<string, { archive: string; sha256: string }> = {
@@ -116,7 +116,9 @@ export function provider(context: vscode.ExtensionContext): vscode.McpServerDefi
       }
       return [
         new vscode.McpStdioServerDefinition(
-          'Optics Framework',
+          // The same name the other clients register, so one server does not appear under two
+          // names depending on which agent is listing it.
+          NAME,
           // A placeholder: the real command needs the binary, which resolve fetches. VS Code
           // calls this eagerly and forbids user interaction here, so the download waits.
           'agent-lsp',

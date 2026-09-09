@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 
-import { PROVIDER_ID, provider, relaunch, serverEnv, serverSpec } from '../mcp';
+import { NAME, PROVIDER_ID, provider, relaunch, serverEnv, serverSpec } from '../mcp';
 
 // agent-lsp takes the language server as one comma-separated argument, so a wrong shape here is
 // an MCP server that starts and then bridges nothing.
@@ -96,7 +96,7 @@ suite('agent-lsp provider', () => {
     relaunch(launch);
 
     const resolved = (await provider(context).resolveMcpServerDefinition?.(
-      new vscode.McpStdioServerDefinition('Optics Framework', 'agent-lsp', [], {}),
+      new vscode.McpStdioServerDefinition(NAME, 'agent-lsp', [], {}),
       new vscode.CancellationTokenSource().token
     )) as vscode.McpStdioServerDefinition;
 

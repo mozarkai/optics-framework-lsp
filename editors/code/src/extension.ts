@@ -64,9 +64,9 @@ async function offerAgentSetup(context: vscode.ExtensionContext): Promise<void> 
 
   const configure = 'Set up now';
   const choice = await vscode.window.showInformationMessage(
-    'Optics: your AI agent can query this project through MCP. Copilot finds the server ' +
-      'automatically; Claude Code needs one command, which also installs a skill telling the ' +
-      'agent where the optics documentation is.',
+    'Optics: your AI agent can query this project through the Optics LSP MCP server. ' +
+      'Copilot finds it automatically; Claude Code needs one command, which also installs a ' +
+      'skill telling the agent where the optics documentation is.',
     configure,
     'Not now'
   );
@@ -107,8 +107,8 @@ async function configureMcp(context: vscode.ExtensionContext): Promise<void> {
     void vscode.window.showInformationMessage(
       skilled.length > 0
         ? `Optics: installed the optics skill for ${skilled.join(', ')}. Copilot finds the ` +
-            'server under MCP Servers already, and needs no setup.'
-        : 'Optics: nothing to configure. Copilot finds the server under MCP Servers already.'
+            'Optics LSP MCP server under MCP Servers already, and needs no setup.'
+        : 'Optics: nothing to configure. Copilot finds the Optics LSP MCP server under MCP Servers already.'
     );
     return;
   }

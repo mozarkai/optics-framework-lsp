@@ -55,7 +55,7 @@ class ConfigureMcpAction : AnAction() {
         }
 
         ProgressManager.getInstance().run(
-            object : Task.Backgroundable(project, "Configuring Optics MCP server", true) {
+            object : Task.Backgroundable(project, "Configuring the Optics LSP MCP server", true) {
                 override fun run(indicator: ProgressIndicator) =
                     configure(project, root, chosen, scope, skill, indicator)
             }
@@ -151,7 +151,7 @@ class ConfigureMcpAction : AnAction() {
         NotificationGroupManager.getInstance()
             .getNotificationGroup("Optics")
             .createNotification(
-                "Optics MCP server ready",
+                "Optics LSP MCP server ready",
                 body,
                 if (failed.isEmpty()) NotificationType.INFORMATION else NotificationType.WARNING,
             )
@@ -161,7 +161,7 @@ class ConfigureMcpAction : AnAction() {
     private fun fail(project: Project, message: String) {
         NotificationGroupManager.getInstance()
             .getNotificationGroup("Optics")
-            .createNotification("Optics MCP server", message, NotificationType.WARNING)
+            .createNotification("Optics LSP MCP server", message, NotificationType.WARNING)
             .addAction(
                 NotificationAction.createSimple("Open Settings") {
                     ShowSettingsUtil.getInstance()
@@ -192,7 +192,7 @@ private class ChooseClientsDialog(
     private val scopePanel = JPanel(GridLayout(0, 1)).apply { scopes.forEach { add(it) } }
 
     init {
-        title = "Configure Optics MCP Server"
+        title = "Configure Optics LSP MCP Server"
         setOKButtonText("Register")
         ButtonGroup().apply { scopes.forEach { add(it) } }
         scopes.first().isSelected = true
@@ -201,7 +201,7 @@ private class ChooseClientsDialog(
 
     override fun createCenterPanel(): JComponent = panel {
         if (boxes.isNotEmpty()) {
-            row { label("Add the Optics MCP server to:") }
+            row { label("Add the Optics LSP MCP server to:") }
             for (box in boxes) row { cell(box) }
             separator()
             row { label("Register for:") }

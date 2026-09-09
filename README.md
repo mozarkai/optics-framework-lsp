@@ -337,7 +337,7 @@ a module of the same shape, which they would otherwise draw identically.
 
 Both editor clients offer the server over [MCP](https://modelcontextprotocol.io), so an agent can
 ask it about the whole project rather than only the open files. Automatic in VS Code; **Tools |
-Configure Optics MCP Server** in JetBrains IDEs. See
+Configure Optics LSP MCP Server** in JetBrains IDEs. See
 [`editors/code`](editors/code/README.md) and [`editors/intellij`](editors/intellij/README.md).
 
 For anything with a shell, `optics-lsp lint . --json` needs no bridge at all.

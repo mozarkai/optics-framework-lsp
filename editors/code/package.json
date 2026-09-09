@@ -2,7 +2,7 @@
   "name": "optics-framework-lsp",
   "displayName": "Optics Framework",
   "description": "Diagnostics, completion, hover, goto-definition, rename, workspace symbols and an MCP server for AI agents, for optics-framework CSV and YAML test suites",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publisher": "mozarkai",
   "license": "Apache-2.0",
   "repository": {

@@ -16,6 +16,7 @@ from typing import TypeGuard
 
 import yaml
 
+from ..keyword_catalog import CATALOG, slug
 from .ast import AST, Block, Element, IssueKind, Locator, SourceIssue, Span, Step
 
 # The keys the reader looks up, spelt exactly as it spells them. Public: `validation`
@@ -136,10 +137,26 @@ def _test_step(node: yaml.Node, uri: str, issues: list[SourceIssue]) -> Step | N
     return Step(step_name=text, row=_row(node), name_span=at(0, len(text)))
 
 
+def _split(text: str, words: list[re.Match]) -> tuple[int, int] | None:
+    """Where the keyword name ends, as `_parse_module_step` decides it: the longest run of
+    leading words the catalog names, else the first `${...}`. Returned as (end of the
+    keyword, start of the params) — the two differ when a `${...}` is preceded by spaces.
+
+    The catalog answers first because a keyword whose first param is a plain value has no
+    `${...}` to split on; `Sleep 5` used to be read as one keyword named `sleep 5`."""
+    for count in range(len(words), 0, -1):
+        name = text[words[0].start() : words[count - 1].end()]
+        if CATALOG.get(slug(name)) is not None:
+            after = words[count].start() if count < len(words) else len(text)
+            return words[count - 1].end(), after
+
+    found = _VAR.search(text)
+    return (found.start(), found.start()) if found else None
+
+
 def _module_step(node: yaml.Node, uri: str, issues: list[SourceIssue]) -> Step | None:
-    """A module step, split as `_parse_module_step` splits it: at the first `${...}`,
-    with everything before it the keyword and everything after it whitespace-separated
-    params."""
+    """A module step, split as `_parse_module_step` splits it: a keyword name and its
+    whitespace-separated params."""
     if not _string(node, uri, issues):
         return None
 
@@ -148,16 +165,16 @@ def _module_step(node: yaml.Node, uri: str, issues: list[SourceIssue]) -> Step |
     if not text:
         return None
 
-    found = _VAR.search(text)
-    if found is None:
-        # With no `${...}` the reader takes the whole string as the keyword, params and
-        # all. `Launch App` is a real keyword and works; `Sleep 5` becomes `sleep_5`
-        # and does not. Only the catalog can tell those apart, so saying so is left to
-        # `_unknown_steps`.
+    words = list(re.finditer(r"\S+", text))
+    split = _split(text, words)
+    if split is None:
+        # Neither the catalog nor a `${...}` claims any of it, so the reader takes the
+        # whole string as the keyword — which is how a step naming another module
+        # reaches the runner. `_unknown_steps` says so when nothing answers to it.
         return Step(step_name=text, row=row, name_span=at(0, len(text)))
 
-    start = found.start()
-    keyword = text[:start].strip()
+    end, start = split
+    keyword = text[:end].strip()
     if not keyword:
         # `_process_module_steps` drops a step whose keyword came out empty.
         return None
@@ -177,6 +194,7 @@ def _module_step(node: yaml.Node, uri: str, issues: list[SourceIssue]) -> Step |
             for m in params
             if (span := at(start + m.start(), start + m.end())) is not None
         ],
+        raw=text,
     )
 
 

@@ -115,13 +115,13 @@ def _name_indent(lines: list[str], section: int, row: int) -> int | None:
 def _keyword(words: list[str], catalog: Catalog | None) -> tuple[int, str]:
     """How many leading words name the keyword, and its slug.
 
-    `_parse_module_step` would split at the first `${...}`, but a cursor is often ahead
-    of any: after `Press Element ` there is nothing to anchor on and the param list is
-    exactly what is wanted. So the longest run of leading words the catalog knows is
-    taken instead, which is what `optics generate`'s reader does with its registry.
+    The same rule `_parse_module_step` applies, and for the same reason: a keyword whose
+    first param is a plain value has no `${...}` to anchor on, and neither does a cursor
+    sitting just after `Press Element `.
 
     With no run the catalog knows, every word is part of the name — which is also what
-    the reader does with a step holding no `${...}` at all.
+    the reader does with a name it cannot claim, so that a step calling another module
+    reaches it whole.
     """
     for take in range(len(words), 0, -1):
         name = slug(" ".join(words[:take]))

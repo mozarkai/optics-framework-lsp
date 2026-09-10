@@ -14,8 +14,7 @@ from functools import partial
 from operator import attrgetter
 
 from .keyword_catalog import Catalog, slug
-from .parser import is_yaml
-from .parser.ast import AST, ErrorDefinition, IssueKind, Step, kinds_of
+from .parser.ast import AST, ErrorDefinition, IssueKind, kinds_of
 from .parser.yaml_parser import CLASSIFY, SECTIONS
 
 SOURCE = "optics"
@@ -96,11 +95,6 @@ _ISSUES: dict[IssueKind, tuple[int, str]] = {
     "yaml-step-not-a-string": (
         ERROR,
         "A step must be a string; anything else aborts the whole run",
-    ),
-    "yaml-step-without-variable": (
-        ERROR,
-        "`{detail}` has no ${{...}}, so the whole line is read as the keyword name and "
-        "no keyword answers to it",
     ),
     "yaml-error-definitions-unread": (
         WARNING,
@@ -379,19 +373,6 @@ def _unknown_elements(ast: AST) -> Iterator[_Keyed]:
             )
 
 
-def _unresolved(uri: str, step: Step) -> tuple[int, str, str]:
-    """Why a step resolved to nothing. In a yaml the likely reason is a literal param:
-    `_parse_module_step` splits at the first `${...}`, so with none present the params
-    are swallowed into the keyword name and `Sleep 5` looks up `sleep_5`. A csv keeps
-    its params in their own columns and cannot go wrong this way."""
-    if is_yaml(uri) and " " in (step.step_name or "") and not VAR.search(step.step_name or ""):
-        code = "yaml-step-without-variable"
-        severity, template = _ISSUES[code]
-        return severity, code, template.format(detail=step.step_name, exact="")
-
-    return ERROR, "keyword-not-found", f"{step.step_name!r} is not a keyword or module"
-
-
 def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Keyed]:
     # Raw names: `get_module_definition` is a plain dict lookup, so case matters.
     modules = {m.name for m in ast.modules}
@@ -403,12 +384,21 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Keyed]:
 
             # A step calls a keyword or, for nested modules, another module. Only the
             # keyword half is normalised: the runner looks a module up by its raw name.
-            if step.step_name in modules:
+            # `step.raw` is the scalar the catalog split params off. A module wins over
+            # that split: `Sleep Well` is the module, not `Sleep` with a param, and the
+            # runner resolves it the same way.
+            if step.step_name in modules or (step.raw or "") in modules:
                 continue
 
             keyword = catalog.get(slug(step.step_name))
             if keyword is None:
-                yield _diag(module.uri, step.row, *_unresolved(module.uri, step))
+                yield _diag(
+                    module.uri,
+                    step.row,
+                    ERROR,
+                    "keyword-not-found",
+                    f"{step.step_name!r} is not a keyword or module",
+                )
                 continue
 
             given = len(step.params)

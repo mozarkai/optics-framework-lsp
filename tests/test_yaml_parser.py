@@ -151,6 +151,39 @@ def test_spans_point_at_the_keyword_and_each_param():
     assert [line[slice(*s)] for s in step.param_spans] == ["${f}", "hi"]
 
 
+def test_a_quoted_value_holds_its_space():
+    """The only way a param can contain one: `param_str.split()` is quote-aware now."""
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} text="two words"\n')
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("Enter Text", ["${f}", "text=two words"])
+
+
+def test_a_quoted_positional_value_holds_its_space():
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} "two words"\n')
+    assert ast.modules[0].steps[0].params == ["${f}", "two words"]
+
+
+def test_a_locator_keeps_the_quotes_inside_it():
+    """They do not wrap the value, so they are part of it — unwrapping them would break
+    every double-quoted xpath."""
+    ast = _parse('Modules:\n  - M:\n      - Press Element //*[@text="a b"]\n')
+    assert ast.modules[0].steps[0].params == ['//*[@text="a b"]']
+
+
+def test_an_unbalanced_quote_splits_as_before():
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} text="abc\n')
+    assert ast.modules[0].steps[0].params == ["${f}", 'text="abc']
+
+
+def test_a_quoted_param_span_covers_its_quotes():
+    """The step carries what the runner is given; the span covers what was written."""
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} text="two words"\n')
+    step = ast.modules[0].steps[0]
+    line = '      - Enter Text ${f} text="two words"'
+    assert [line[slice(*span)] for span in step.param_spans] == ["${f}", 'text="two words"']
+    assert step.params[1] == "text=two words"
+
+
 def test_a_quoted_step_is_measured_past_its_quote():
     ast = _parse("Modules:\n  - M:\n      - 'Enter Text ${f}'\n")
     step = ast.modules[0].steps[0]

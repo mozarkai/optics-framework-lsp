@@ -137,6 +137,30 @@ def _test_step(node: yaml.Node, uri: str, issues: list[SourceIssue]) -> Step | N
     return Step(step_name=text, row=_row(node), name_span=at(0, len(text)))
 
 
+# A quoted run holds together, so a value written entirely in quotes can carry a space. The
+# quotes inside a locator (`//button[@id="save"]`) are not at the start of the value, so they
+# stay; `_unwrap` gives up only the ones wrapping a value whole.
+_TOKEN = re.compile(r"""(?:[^\s"']|"[^"]*"|'[^']*')+""")
+_WRAPPED = re.compile(r"""^(?P<q>["'])(?P<body>.*)(?P=q)$""", re.S)
+
+
+def tokens(text: str) -> list[re.Match]:
+    """A step's whitespace-separated tokens, as the reader splits them — quoted runs whole. An
+    unbalanced quote falls back to plain whitespace, which is what the reader does too."""
+    if text.count('"') % 2 or text.count("'") % 2:
+        return list(re.finditer(r"\S+", text))
+    return list(_TOKEN.finditer(text))
+
+
+def unwrap(token: str) -> str:
+    """The value the runner sees: a value written entirely in quotes without them."""
+    key, sep, value = token.partition("=")
+    found = _WRAPPED.match(value if sep else token)
+    if not found:
+        return token
+    return f"{key}={found['body']}" if sep else found["body"]
+
+
 def _split(
     text: str, words: list[re.Match], modules: frozenset[str]
 ) -> tuple[int, int] | None:
@@ -179,7 +203,7 @@ def _module_step(
     if not text:
         return None
 
-    words = list(re.finditer(r"\S+", text))
+    words = tokens(text)
     split = _split(text, words, modules)
     if split is None:
         # Neither the catalog nor a `${...}` claims any of it, so the reader takes the
@@ -193,13 +217,13 @@ def _module_step(
         # `_process_module_steps` drops a step whose keyword came out empty.
         return None
 
-    # `param_str.split()`, so a param cannot hold a space: yaml quoting is long gone by
-    # the time the reader gets here.
-    params = list(re.finditer(r"\S+", text[start:]))
+    # The span covers the quotes, the param does not: an editor should select what was
+    # written, while the step carries what the runner will be given.
+    params = tokens(text[start:])
     return Step(
         step_name=keyword,
         row=row,
-        params=[m.group() for m in params],
+        params=[unwrap(m.group()) for m in params],
         name_span=at(0, len(keyword)),
         # All or nothing: `at` answers for every index or for none, so this drops
         # every param's span together rather than misaligning them with `params`.

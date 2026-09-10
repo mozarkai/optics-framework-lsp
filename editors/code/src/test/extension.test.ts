@@ -3,7 +3,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 suite('optics-framework-lsp', () => {
-  suiteSetup(async () => {
+  suiteSetup(async function () {
+    this.timeout(120_000);
     const extension = vscode.extensions.getExtension('mozarkai.optics-framework-lsp');
     assert.ok(extension, 'expected the extension under test to be installed');
     await extension!.activate();

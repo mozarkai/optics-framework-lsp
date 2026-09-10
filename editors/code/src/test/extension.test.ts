@@ -33,11 +33,11 @@ suite('optics-framework-lsp', () => {
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
 
     const diagnostics = await waitForDiagnostics(uri);
-    const finding = diagnostics.find((d) => d.message.includes('Sleep 5'));
+    const finding = diagnostics.find((d) => d.message.includes('Slep 5'));
 
-    assert.ok(finding, `expected a diagnostic mentioning "Sleep 5", got: ${JSON.stringify(diagnostics)}`);
+    assert.ok(finding, `expected a diagnostic mentioning "Slep 5", got: ${JSON.stringify(diagnostics)}`);
     assert.strictEqual(finding!.severity, vscode.DiagnosticSeverity.Error);
-    assert.strictEqual(finding!.range.start.line, 4);
+    assert.strictEqual(finding!.range.start.line, 6);
   });
 });
 

@@ -112,6 +112,21 @@ def test_an_element_moves_inside_its_braces_only():
     )
 
 
+def test_a_param_written_by_name_is_a_call_site_too():
+    """A csv cell splits the same way a yaml step does, so `target=` runs the module and
+    only the name after it moves."""
+    sources = [(M, MODULES.replace("Guard,Execute Module,Do Login,", "Guard,Execute Module,target=Do Login,"))]
+    text = dict(sources)[M]
+    edits = rename(sources + SOURCES[1:], CATALOG, text, _at(text, 2, "Do Login"), "Sign In")
+    assert edits is not None
+    lines = text.splitlines()
+    for e in sorted(edits[M], key=lambda e: -e.range.start.character):
+        row = e.range.start.line
+        lines[row] = (
+            lines[row][: e.range.start.character] + e.new_text + lines[row][e.range.end.character :]
+        )
+    assert lines[5] == "Guard,Execute Module,target=Sign In,"
+
 def test_a_bound_variable_moves_with_its_binding():
     after = _applied(MODULES, M, 4, "${serial}", "row").splitlines()
     assert after[2] == "Do Login,Read Data,row,f.csv", "the Read Data cell that binds it"

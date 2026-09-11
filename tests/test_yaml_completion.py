@@ -146,6 +146,54 @@ def test_a_csv_never_gets_a_snippet():
     item = next(i for i in got if i.label == "Enter Text")
     assert item.text_edit.new_text == "Enter Text"
 
+STEP = "Modules:\n  - M:\n      - {}\nElements:\n  save: //a\n"
+
+def _offered(step, **kwargs):
+    """A step with `|` for the cursor: what is offered there."""
+    text = STEP.format(step.replace("|", ""))
+    where = Position(line=2, character=len("      - ") + step.index("|"))
+    return completion.complete(text, where, _ast((YAML_URI, text)), CATALOG, uri=YAML_URI, **kwargs)
+
+def _applied(step, label, **kwargs):
+    """The step line after accepting `label`, which is what checks the edit's range."""
+    line = "      - " + step.replace("|", "")
+    edit = next(i.text_edit for i in _offered(step, **kwargs) if i.label == label)
+    got = line[: edit.range.start.character] + edit.new_text + line[edit.range.end.character :]
+    return got[len("      - ") :]
+
+def test_a_ref_inside_a_named_param_is_completed_in_place():
+    """The `name="` is not part of what is being typed, so replacing the whole token
+    would both nest and stop the client from matching what was typed against it."""
+    assert _applied('Press Element element="${|}"', "save") == 'Press Element element="${save}"'
+
+def test_a_named_param_offers_what_that_param_holds():
+    assert [i.label for i in _offered('Scroll direction="|"')] == ["up", "down", "left", "right"]
+    assert _applied('Scroll direction="|"', "up") == 'Scroll direction="up"'
+
+def test_the_name_decides_the_slot_rather_than_the_position():
+    """`element` is press element's first param wherever it is written. By position this
+    token is the second, `index`, which holds a number and so offers nothing."""
+    assert [i.label for i in _offered('Press Element index="0" element="${|}"')] == ["save"]
+    assert _offered('Press Element ${save} index="|"') == []
+
+def test_a_positional_beside_a_named_param_binds_by_its_own_count():
+    """`index=` took the second slot, so the bare token is still the first, the element --
+    counting tokens instead would read it as the second and offer nothing."""
+    assert [i.label for i in _offered('Press Element index="0" ${|}')] == ["save"]
+
+def test_a_literal_param_still_reaches_the_variables_behind_a_dollar():
+    """The gate is on what is typed in the value, which `duration="` is not part of."""
+    assert [i.label for i in _offered('Sleep duration="${|}"')] == ["save"]
+    assert _offered('Sleep duration="|"') == []
+
+def test_a_locator_that_merely_holds_an_equals_is_one_value():
+    """`text=` is no param of press element, so the token is the element, as the runner
+    reads it -- completing inside it must not treat `text` as a name."""
+    assert _applied('Press Element text=|', "save") == "Press Element ${save}"
+
+def test_a_quoted_positional_value_is_completed_inside_its_quotes():
+    assert _applied('Press Element "${|}"', "save") == 'Press Element "${save}"'
+
 def test_a_param_slot_offers_the_projects_variables():
     assert _complete("Modules:\n  - M:\n      - Press Element ", 2, 24) == ["save"]
 

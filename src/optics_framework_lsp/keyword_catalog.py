@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from .keywords import KEYWORDS, OPTICS_VERSION
@@ -46,3 +47,27 @@ CATALOG: Catalog = {
     )
     for name, signature in KEYWORDS.items()
 }
+
+
+def slots(
+    step_name: str | None, params: Sequence[str], catalog: Catalog | None = None
+) -> list[tuple[int, str]]:
+    """Each param as the slot it binds and the value alone.
+
+    `split_params_by_signature`'s rule: a `name=` binds that slot wherever it is written,
+    the rest bind by position. A key naming no param stays part of the value, which keeps
+    a locator like `text=Login` the element. Against the shipped signature by default.
+    """
+    found = (catalog if catalog is not None else CATALOG).get(slug(step_name))
+    names = found.params if found else []
+
+    bound: list[tuple[int, str]] = []
+    free = 0
+    for param in params:
+        key, sep, value = param.partition("=")
+        if sep and (key := key.strip()) in names:
+            bound.append((names.index(key), value.strip()))
+        else:
+            bound.append((free, param))
+            free += 1
+    return bound

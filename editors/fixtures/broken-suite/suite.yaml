@@ -1,5 +1,7 @@
-# A yaml suite with the trap that only yaml has: `_parse_module_step` splits at the
-# first `${...}`, so with none present `Sleep 5` becomes the keyword name.
+# A yaml suite with one step nothing answers to. `Slep 5` is a misspelt `Sleep`: the keyword
+# catalogue cannot claim any run of its words, so the reader takes the whole line as the
+# keyword name. The `Sleep 5` above it is the same shape spelt right, and is clean.
 Modules:
   - Yaml Module:
       - Sleep 5
+      - Slep 5

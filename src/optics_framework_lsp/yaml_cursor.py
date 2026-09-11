@@ -16,15 +16,16 @@ from dataclasses import dataclass
 
 from lsprotocol.types import Position, Range, TextEdit
 
-from .keyword_catalog import Catalog, slug
-from .parser.yaml_parser import CLASSIFY
+from .keyword_catalog import Catalog, slots, slug
+from .parser.yaml_parser import CLASSIFY, tokens as step_tokens
 from .positions import from_utf16, to_utf16
 
 # A sequence item and a mapping key. Matched against a partial line too, so both have
 # to tolerate one that stops mid-word.
 _ITEM = re.compile(r"^(\s*)-(\s*)(.*)$")
 _KEY = re.compile(r"^(\s*)(\S[^:]*?)\s*:(.*)$")
-_WORD = re.compile(r"\S+")
+# Tokenising matches the reader's: a quoted value is one word, so a cursor inside `text="a b"`
+# is inside one param rather than two. See `yaml_parser.tokens`.
 
 
 @dataclass(slots=True)
@@ -115,13 +116,13 @@ def _name_indent(lines: list[str], section: int, row: int) -> int | None:
 def _keyword(words: list[str], catalog: Catalog | None) -> tuple[int, str]:
     """How many leading words name the keyword, and its slug.
 
-    `_parse_module_step` would split at the first `${...}`, but a cursor is often ahead
-    of any: after `Press Element ` there is nothing to anchor on and the param list is
-    exactly what is wanted. So the longest run of leading words the catalog knows is
-    taken instead, which is what `optics generate`'s reader does with its registry.
+    The same rule `_parse_module_step` applies, and for the same reason: a keyword whose
+    first param is a plain value has no `${...}` to anchor on, and neither does a cursor
+    sitting just after `Press Element `.
 
     With no run the catalog knows, every word is part of the name — which is also what
-    the reader does with a step holding no `${...}` at all.
+    the reader does with a name it cannot claim, so that a step calling another module
+    reaches it whole.
     """
     for take in range(len(words), 0, -1):
         name = slug(" ".join(words[:take]))
@@ -138,7 +139,7 @@ def _step(
     content_start: int, content: str, character: int, catalog: Catalog | None
 ) -> _Step:
     """The word the cursor is in and the word being typed, and which param each is."""
-    words = [(found.start(), found.group()) for found in _WORD.finditer(content)]
+    words = [(found.start(), found.group()) for found in step_tokens(content)]
     at = character - content_start
 
     if not words:
@@ -161,12 +162,23 @@ def _step(
         return content[: max(at, 0)], joined, content_start, name, -1, rest
 
     offset, word = words[index] if index < len(words) else (at, "")
+    # By name where one is written, and only the value is typed: `element="${b}"` is one token.
+    bound = slots(name, [w for _, w in words[take:]], catalog)
+    slot, value = bound[index - take] if index - take < len(bound) else (index - take, word)
+    inner = len(word) - len(value) + (value[:1] in ('"', "'"))
+    typed = at - offset - inner
+    if typed < 0:
+        # Still in the `name=` itself, which is not a value: answer as if it were one word.
+        inner, typed = 0, max(at - offset, 0)
+    value = word[inner:]
+    if inner and (quote := word[inner - 1]) in "\"'" and value.endswith(quote):
+        value = value[:-1]
     return (
-        word[: max(at - offset, 0)],
-        word,
-        content_start + offset,
+        value[:typed],
+        value,
+        content_start + offset + inner,
         name,
-        index - take,
+        max(slot, 0),
         rest,
     )
 

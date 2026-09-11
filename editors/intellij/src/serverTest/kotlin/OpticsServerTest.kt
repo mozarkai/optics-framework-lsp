@@ -27,14 +27,14 @@ class OpticsServerTest {
     }
 
     @Test
-    fun `publishes a diagnostic for a yaml step holding no variable`() {
+    fun `publishes a diagnostic for a yaml step naming no keyword`() {
         val diagnostics = publishedFor("suite.yaml")
-        assertTrue(diagnostics.contains("Sleep 5")) {
-            "expected a diagnostic naming the swallowed param, got: $diagnostics"
+        assertTrue(diagnostics.contains("Slep 5")) {
+            "expected a diagnostic naming the misspelt keyword, got: $diagnostics"
         }
-        // Row 5 of the fixture, zero-based.
-        assertTrue(Regex(""""line"\s*:\s*4""").containsMatchIn(diagnostics)) {
-            "expected the diagnostic on line 4, got: $diagnostics"
+        // Row 7 of the fixture, zero-based.
+        assertTrue(Regex(""""line"\s*:\s*6""").containsMatchIn(diagnostics)) {
+            "expected the diagnostic on line 6, got: $diagnostics"
         }
     }
 

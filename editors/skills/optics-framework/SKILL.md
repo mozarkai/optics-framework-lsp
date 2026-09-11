@@ -52,27 +52,27 @@ Every name resolves project-wide: a module defined in one file is callable from 
 whatever format either is in, and a rename that misses one cell changes what runs instead of
 failing loudly.
 
-## Writing YAML, and its four traps
+## Writing YAML, and its three traps
 
 YAML is a real peer of CSV at run time, but it is undocumented, no sample ships in one, and
 `optics init` never writes one. Prefer CSV unless the project is already YAML. If you do write
-YAML, these four all fail *silently* — the reader logs and carries on with an empty section, so
+YAML, these three all fail *silently* — the reader logs and carries on with an empty section, so
 the run fails somewhere that says nothing about the cause:
 
-1. **A step needs a `${...}` before any literal param.** The reader splits at the first `${`,
-   so with none present the whole line becomes the keyword name. `- Sleep 5` looks up `sleep_5`
-   and the run fails. Define an element and write `- Sleep ${five}` instead. `- Launch App` is
-   fine: it is a real keyword taking no params.
-2. **A param cannot contain a space.** The params are whitespace-split after YAML quoting is
-   gone, so `Enter Text ${f} hello world` passes three params, not two. Use CSV for that.
-3. **Section keys are read with the case intact** — exactly `Test Cases`, `Modules`, `Elements`.
+1. **A param holding a space has to be quoted.** The params are whitespace-split after YAML
+   quoting is gone, so `Enter Text ${f} hello world` passes three params, not two. Write
+   `text="hello world"`, which the reader unwraps back to one. The quotes inside a locator
+   (`//button[@id="save"]`) are not around the whole value, so they stay.
+2. **Section keys are read with the case intact** — exactly `Test Cases`, `Modules`, `Elements`.
    Writing `test_cases:` still gets the file classified as test cases, and then read as empty.
-4. **`Test Cases` and `Modules` must be lists of single-key mappings.** Written as a plain
+3. **`Test Cases` and `Modules` must be lists of single-key mappings.** Written as a plain
    mapping, the load dies with `AttributeError: 'str' object has no attribute 'items'`.
 
-Two further limits follow from trap 1: **error definitions have no YAML form at all** (they must
-be a CSV), and `Execute Module`, `Run Loop` and `Condition` cannot take a bare multi-word module
-name, because it is swallowed into the keyword or split into separate params.
+One further limit: **error definitions have no YAML form at all** — they must be a CSV.
+
+A step's keyword name ends where the keyword catalogue says it does, so a literal first param
+needs no `${...}` to be seen as a param: `Sleep 5` is the keyword `Sleep`. A module whose name
+starts with a keyword's, like `Sleep Well`, is still read as the module.
 
 ## Answering questions about a suite
 

@@ -170,6 +170,32 @@ def test_a_locator_keeps_the_quotes_inside_it():
     assert ast.modules[0].steps[0].params == ['//*[@text="a b"]']
 
 
+def test_an_apostrophe_inside_a_quoted_value_is_not_an_unbalanced_quote():
+    """Counting quote characters read this as one and split the value the reader keeps
+    whole — `_unbalanced` asks the pattern whether it skipped anything instead."""
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} text="Bob\'s file"\n')
+    assert ast.modules[0].steps[0].params == ["${f}", "text=Bob's file"]
+
+
+def test_the_other_quote_character_inside_a_value_is_not_special():
+    ast = _parse("Modules:\n  - M:\n      - Enter Text ${f} text='say \"hi\" now'\n")
+    assert ast.modules[0].steps[0].params == ["${f}", 'text=say "hi" now']
+
+
+def test_a_quoted_value_without_a_space_gives_its_quotes_up_too():
+    """The form the yaml editor writes for every named param: the keyword is handed `2`,
+    never the three characters `"2"`."""
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} index="2"\n')
+    assert ast.modules[0].steps[0].params == ["${f}", "index=2"]
+
+
+def test_a_quoted_bare_word_is_a_value_and_not_part_of_the_name():
+    """Which is the escape hatch when a bare word would read as part of a keyword name."""
+    ast = _parse('Modules:\n  - M:\n      - Press Element "Login"\n')
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("Press Element", ["Login"])
+
+
 def test_an_unbalanced_quote_splits_as_before():
     ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} text="abc\n')
     assert ast.modules[0].steps[0].params == ["${f}", 'text="abc']

@@ -161,6 +161,24 @@ def _applied(step, label, **kwargs):
     got = line[: edit.range.start.character] + edit.new_text + line[edit.range.end.character :]
     return got[len("      - ") :]
 
+def test_a_param_arrives_named_with_the_cursor_inside_its_quotes():
+    """`$0` is where the editor leaves the cursor, so the value is typed straight away."""
+    item = next(i for i in _offered("Enter Text ${f} te|", snippets=True) if i.label == "text=")
+    assert item.text_edit.new_text == 'text="$0"'
+    assert item.insert_text_format == InsertTextFormat.Snippet
+    assert _applied("Enter Text ${f} te|", "text=", snippets=True) == 'Enter Text ${f} text="$0"'
+    # A client that cannot place a cursor gets the name and nothing to delete.
+    assert _applied("Enter Text ${f} te|", "text=") == "Enter Text ${f} text="
+
+def test_a_param_already_written_is_not_offered_again():
+    got = [i.label for i in _offered('Press Element index="0" |')]
+    assert "index=" not in got and "element=" in got
+
+def test_no_param_name_is_offered_where_a_value_is_being_typed():
+    """A name inside `text="..."` or a `${` would nest inside the value."""
+    assert [i.label for i in _offered('Enter Text ${f} text="|"')] == ["save"]
+    assert [i.label for i in _offered("Press Element ${|}")] == ["save"]
+
 def test_a_ref_inside_a_named_param_is_completed_in_place():
     """The `name="` is not part of what is being typed, so replacing the whole token
     would both nest and stop the client from matching what was typed against it."""
@@ -195,17 +213,20 @@ def test_a_quoted_positional_value_is_completed_inside_its_quotes():
     assert _applied('Press Element "${|}"', "save") == 'Press Element "${save}"'
 
 def test_a_param_slot_offers_the_projects_variables():
-    assert _complete("Modules:\n  - M:\n      - Press Element ", 2, 24) == ["save"]
+    """Plus the keyword's own params, which is the only way to write a later one."""
+    got = _complete("Modules:\n  - M:\n      - Press Element ", 2, 24)
+    assert got == ["save", "element=", "index="]
 
 def test_a_params_documented_values_win_over_variables():
     got = _complete("Modules:\n  - M:\n      - Read Data ${x} ", 2, 25, data_files=["d.csv"])
-    assert got == ["d.csv"]
+    # `name` is filled by the positional before it, so naming it again is not offered.
+    assert got == ["d.csv", "path="]
 
 def test_a_literal_param_offers_nothing_until_a_variable_is_started():
     # `index` is a number. Nothing belongs there, but `Press Element ${save} ${n}` is how
     # a yaml writes one, so the elements stay reachable behind the `$`.
     line = "Modules:\n  - M:\n      - Press Element ${save} "
-    assert _complete(line, 2, 31) == []
+    assert _complete(line, 2, 31) == ["index="]
     assert _complete(line + "${", 2, 33) == ["save"]
 
 def test_an_element_name_offers_what_is_used_but_undefined():

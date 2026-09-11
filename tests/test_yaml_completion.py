@@ -1,6 +1,6 @@
 # What a yaml suite offers where the cursor is, and what it says about a keyword.
 
-from lsprotocol.types import Position
+from lsprotocol.types import InsertTextFormat, Position
 
 from optics_framework_lsp import completion
 from optics_framework_lsp.keyword_catalog import Keyword
@@ -16,6 +16,8 @@ CATALOG = {
         params=["element", "text"], required=2, variadic=False, defaults={}, doc="",
     ),
     "sleep": Keyword(params=["duration"], required=1, variadic=False, defaults={}, doc=""),
+    # `direction` is one of the param names `PARAM_VALUES` knows the values of.
+    "scroll": Keyword(params=["direction"], required=1, variadic=False, defaults={}, doc=""),
     "read data": Keyword(
         params=["name", "path"], required=2, variadic=False, defaults={}, doc="",
     ),
@@ -101,6 +103,48 @@ def test_a_half_typed_keyword_is_replaced_whole():
     )
     edit = next(i.text_edit for i in got if i.label == "Press Element")
     assert (edit.range.start.character, edit.range.end.character) == (8, 16)
+
+def _item(text, line, character, label, **kwargs):
+    got = completion.complete(
+        text, Position(line=line, character=character), _ast(), CATALOG, uri=YAML_URI, **kwargs
+    )
+    return next(i for i in got if i.label == label)
+
+def test_a_keyword_arrives_with_its_required_params():
+    """Tab walks the holes, so the step is finished by typing values rather than names."""
+    item = _item("Modules:\n  - M:\n      - ", 2, 8, "Enter Text", snippets=True)
+    assert item.text_edit.new_text == 'Enter Text element="${1:element}" text="${2:text}"'
+    assert item.insert_text_format == InsertTextFormat.Snippet
+
+def test_a_param_with_fixed_values_arrives_as_a_choice():
+    item = _item("Modules:\n  - M:\n      - ", 2, 8, "Scroll", snippets=True)
+    assert item.text_edit.new_text == 'Scroll direction="${1|up,down,left,right|}"'
+
+def test_an_optional_param_is_left_out():
+    """`index` defaults, so writing it would be noise to delete."""
+    item = _item("Modules:\n  - M:\n      - ", 2, 8, "Press Element", snippets=True)
+    assert item.text_edit.new_text == 'Press Element element="${1:element}"'
+
+def test_a_keyword_needing_nothing_stays_a_plain_insert():
+    item = _item("Modules:\n  - M:\n      - ", 2, 8, "Launch App", snippets=True)
+    assert item.text_edit.new_text == "Launch App" and item.insert_text_format is None
+
+def test_a_client_without_snippet_support_gets_the_name_alone():
+    item = _item("Modules:\n  - M:\n      - ", 2, 8, "Enter Text")
+    assert item.text_edit.new_text == "Enter Text" and item.insert_text_format is None
+
+def test_a_csv_never_gets_a_snippet():
+    """Each param is its own cell there, so there is nothing to walk."""
+    got = completion.complete(
+        "module_name,module_step\nM,",
+        Position(line=1, character=2),
+        _ast(),
+        CATALOG,
+        uri=CSV_URI,
+        snippets=True,
+    )
+    item = next(i for i in got if i.label == "Enter Text")
+    assert item.text_edit.new_text == "Enter Text"
 
 def test_a_param_slot_offers_the_projects_variables():
     assert _complete("Modules:\n  - M:\n      - Press Element ", 2, 24) == ["save"]

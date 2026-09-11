@@ -291,6 +291,26 @@ async def test_completion_signature_and_hover_over_lsp(catalog_client, catalog_p
     assert ":param element:" in hover.contents.value
 
 
+def test_snippets_follow_what_the_client_declared():
+    """Real capability objects, so the attribute path is checked against lsprotocol."""
+    from types import SimpleNamespace
+
+    from optics_framework_lsp.server import _snippets
+
+    def client(item):
+        caps = types.ClientCapabilities(
+            text_document=types.TextDocumentClientCapabilities(
+                completion=types.CompletionClientCapabilities(completion_item=item)
+            )
+        )
+        return SimpleNamespace(client_capabilities=caps)
+
+    supports = types.ClientCompletionItemOptions(snippet_support=True)
+    assert _snippets(client(supports))
+    assert not _snippets(client(types.ClientCompletionItemOptions()))
+    assert not _snippets(SimpleNamespace(client_capabilities=types.ClientCapabilities()))
+
+
 async def test_dot_folders_are_not_scanned(catalog_client, catalog_project):
     """optics-framework ships sample csvs of its own; they must stay invisible.
 

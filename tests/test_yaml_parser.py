@@ -102,6 +102,41 @@ def test_a_step_the_catalog_cannot_claim_at_all_stays_whole():
     assert (step.step_name, step.params) == ("Login Flow", [])
 
 
+def test_a_module_name_wins_over_the_catalog():
+    """`_parse_module_step` checks the project's module names before the catalogue, so a
+    module called `Sleep Well` is that module and not `Sleep` with a param."""
+    ast = _parse("Modules:\n  - M:\n      - Sleep Well\n  - Sleep Well:\n      - Launch App\n")
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("Sleep Well", [])
+
+
+def test_a_module_name_from_another_file_wins_too():
+    """`_load_modules` gathers the names across every module file before parsing one."""
+    ast = parse_yaml_sources([
+        (URI, "Modules:\n  - M:\n      - Sleep Well\n"),
+        ("file:///w/other.yaml", "Modules:\n  - Sleep Well:\n      - Launch App\n"),
+    ])
+    assert [(s.step_name, s.params) for s in ast.modules[0].steps] == [("Sleep Well", [])]
+
+
+def test_a_module_name_is_matched_by_its_slug():
+    """`_matched_module_name` falls back to the slug, so a step may name the module in
+    another case. The step keeps the text as written — the spans point at the source."""
+    ast = _parse("Modules:\n  - M:\n      - sleep well\n  - Sleep Well:\n      - Launch App\n")
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("sleep well", [])
+
+
+def test_a_mis_cased_modules_key_defines_no_names():
+    """`read_module_names` does `data.get("Modules")`, so the section reads as nothing —
+    the same gap that already makes its blocks unreadable."""
+    ast = parse_yaml_sources([
+        (URI, "Modules:\n  - M:\n      - Sleep Well\n"),
+        ("file:///w/other.yaml", "modules:\n  - Sleep Well:\n      - Launch App\n"),
+    ])
+    assert [(s.step_name, s.params) for s in ast.modules[0].steps] == [("Sleep", ["Well"])]
+
+
 def test_a_step_that_is_only_a_variable_is_dropped():
     """`_process_module_steps` keeps nothing when the keyword came out empty."""
     assert _parse("Modules:\n  - M:\n      - ${f}\n").modules[0].steps == []

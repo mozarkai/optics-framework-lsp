@@ -66,9 +66,11 @@ the run fails somewhere that says nothing about the cause:
 3. **`Test Cases` and `Modules` must be lists of single-key mappings.** Written as a plain
    mapping, the load dies with `AttributeError: 'str' object has no attribute 'items'`.
 
-Two further limits: **error definitions have no YAML form at all** (they must be a CSV), and
-`Execute Module`, `Run Loop` and `Condition` cannot take a bare multi-word module name — trap 1
-splits it into one param per word.
+One further limit: **error definitions have no YAML form at all** — they must be a CSV.
+
+A step's keyword name ends where the keyword catalogue says it does, so a literal first param
+needs no `${...}` to be seen as a param: `Sleep 5` is the keyword `Sleep`. A module whose name
+starts with a keyword's, like `Sleep Well`, is still read as the module.
 
 ## Answering questions about a suite
 

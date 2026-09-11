@@ -205,8 +205,10 @@ def _listing(
     return [_item(cursor, name, kind, detail, name) for name in names]
 
 
-def _variables(cursor: AnyCursor, ast: AST) -> list[CompletionItem]:
-    names = {e.name for e in ast.elements} | declared(ast)
+def _variables(
+    cursor: AnyCursor, ast: AST, catalog: Catalog | None = None
+) -> list[CompletionItem]:
+    names = {e.name for e in ast.elements} | declared(ast, catalog)
     return [
         _item(cursor, name, CompletionItemKind.Variable, "element", f"${{{name}}}")
         for name in sorted(names)
@@ -230,7 +232,7 @@ def _params(
     # condition is either a module, optionally !-inverted, or an expression.
     if name == "condition":
         modules = _modules(cursor, ast, "!" if cursor.partial.startswith("!") else "")
-        return modules if param % 2 else modules + _variables(cursor, ast)
+        return modules if param % 2 else modules + _variables(cursor, ast, catalog)
 
     kind = PARAM_KINDS.get(name, {}).get(param)
     if kind == "module":
@@ -254,7 +256,7 @@ def _params(
     if param_name in _LITERAL and not cursor.partial.startswith("$"):
         return []
 
-    return _variables(cursor, ast)
+    return _variables(cursor, ast, catalog)
 
 
 def _call(name: str, keyword: Keyword) -> str:
@@ -345,7 +347,7 @@ def _complete_yaml(
             # image locator is the bare filename of a template in the project.
             return _listing(found, images, CompletionItemKind.File, "template image")
         kind = CompletionItemKind.Variable
-        return _listing(found, sorted(undefined(ast)), kind, "used, not defined")
+        return _listing(found, sorted(undefined(ast, catalog)), kind, "used, not defined")
 
     return []
 
@@ -410,7 +412,7 @@ def complete(
     # Defining an element is how an element-not-found gets fixed, so offer those names.
     if cursor.column == cursor.column_of("element_name"):
         kind = CompletionItemKind.Variable
-        return _listing(cursor, sorted(undefined(ast)), kind, "used, not defined")
+        return _listing(cursor, sorted(undefined(ast, catalog)), kind, "used, not defined")
 
     # An id is usually an xpath or literal text, which we cannot guess, but an image
     # locator is the bare filename of a template somewhere in the project. Any
@@ -644,7 +646,7 @@ def references(
     if kind == "module":
         # A Condition names a module to run, which validation cannot assume, and so does
         # a step cell — but only when no keyword claims the name first.
-        seen = list(module_refs(ast)) + list(module_conditions(ast)) + [
+        seen = list(module_refs(ast, catalog)) + list(module_conditions(ast)) + [
             (m.uri, step.row, step.step_name)
             for m in ast.modules
             for step in m.steps
@@ -653,9 +655,9 @@ def references(
         uses = [_at(uri, row) for uri, row, n in seen if n == name]
         declared_at = [_at(m.uri, m.start_row) for m in ast.modules if m.name == name]
     elif kind == "element":
-        uses = [_at(uri, row) for uri, row, n in element_refs(ast) if n == name]
+        uses = [_at(uri, row) for uri, row, n in element_refs(ast, catalog) if n == name]
         declared_at = [_at(e.uri, e.row) for e in ast.elements if e.name == name] + [
-            _at(uri, row) for uri, row, n in declarations(ast) if n == name
+            _at(uri, row) for uri, row, n in declarations(ast, catalog) if n == name
         ]
     elif kind == "keyword":
         # The framework defines it, so there is nothing here to declare.

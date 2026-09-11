@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from lsprotocol.types import Position, Range, TextEdit
 
-from .keyword_catalog import Catalog, slug
+from .keyword_catalog import Catalog, slots, slug
 from .parser.yaml_parser import CLASSIFY, tokens as step_tokens
 from .positions import from_utf16, to_utf16
 
@@ -162,12 +162,23 @@ def _step(
         return content[: max(at, 0)], joined, content_start, name, -1, rest
 
     offset, word = words[index] if index < len(words) else (at, "")
+    # By name where one is written, and only the value is typed: `element="${b}"` is one token.
+    bound = slots(name, [w for _, w in words[take:]], catalog)
+    slot, value = bound[index - take] if index - take < len(bound) else (index - take, word)
+    inner = len(word) - len(value) + (value[:1] in ('"', "'"))
+    typed = at - offset - inner
+    if typed < 0:
+        # Still in the `name=` itself, which is not a value: answer as if it were one word.
+        inner, typed = 0, max(at - offset, 0)
+    value = word[inner:]
+    if inner and (quote := word[inner - 1]) in "\"'" and value.endswith(quote):
+        value = value[:-1]
     return (
-        word[: max(at - offset, 0)],
-        word,
-        content_start + offset,
+        value[:typed],
+        value,
+        content_start + offset + inner,
         name,
-        index - take,
+        max(slot, 0),
         rest,
     )
 

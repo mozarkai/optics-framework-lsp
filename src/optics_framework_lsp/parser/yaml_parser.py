@@ -144,10 +144,22 @@ _TOKEN = re.compile(r"""(?:[^\s"']|"[^"]*"|'[^']*')+""")
 _WRAPPED = re.compile(r"""^(?P<q>["'])(?P<body>.*)(?P=q)$""", re.S)
 
 
+def _unbalanced(text: str) -> bool:
+    """Whether the token pattern would skip a non-whitespace character, which only an
+    unpaired quote makes it do. Counting each quote character instead reads the apostrophe
+    in `text="Bob's file"` as an unpaired one and splits a value the reader keeps whole."""
+    gap = 0
+    for match in _TOKEN.finditer(text):
+        if text[gap : match.start()].strip():
+            return True
+        gap = match.end()
+    return bool(text[gap:].strip())
+
+
 def tokens(text: str) -> list[re.Match]:
     """A step's whitespace-separated tokens, as the reader splits them — quoted runs whole. An
     unbalanced quote falls back to plain whitespace, which is what the reader does too."""
-    if text.count('"') % 2 or text.count("'") % 2:
+    if _unbalanced(text):
         return list(re.finditer(r"\S+", text))
     return list(_TOKEN.finditer(text))
 

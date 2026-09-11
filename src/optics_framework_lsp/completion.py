@@ -12,6 +12,7 @@ from lsprotocol.types import (
     CompletionItem,
     CompletionItemKind,
     Hover,
+    InsertTextFormat,
     Location,
     MarkupContent,
     MarkupKind,
@@ -256,20 +257,29 @@ def _params(
     return _variables(cursor, ast)
 
 
-def _steps(cursor: AnyCursor, ast: AST, catalog: Catalog | None) -> list[CompletionItem]:
+def _call(name: str, keyword: Keyword) -> str:
+    """The keyword with a hole per required param; a fixed-value one becomes a choice."""
+    holes = []
+    for at, param in enumerate(keyword.params[: keyword.required], start=1):
+        values = PARAM_VALUES.get(param)
+        hole = f"${{{at}|{','.join(values)}|}}" if values else f"${{{at}:{param}}}"
+        holes.append(f'{param}="{hole}"')
+    return " ".join([name.title(), *holes])
+
+
+def _steps(
+    cursor: AnyCursor, ast: AST, catalog: Catalog | None, *, snippets: bool = False
+) -> list[CompletionItem]:
     """What a step may name: any keyword, or any module for a nested call."""
     items = _modules(cursor, ast)
     for name, keyword in sorted((catalog or {}).items()):
         label = name.title()
-        items.append(
-            _item(
-                cursor,
-                label,
-                CompletionItemKind.Keyword,
-                ", ".join(keyword.params) or "no params",
-                label,
-            )
-        )
+        detail = ", ".join(keyword.params) or "no params"
+        item = _item(cursor, label, CompletionItemKind.Keyword, detail, label)
+        if snippets and keyword.required:
+            item.text_edit = cursor.replacement(_call(name, keyword))
+            item.insert_text_format = InsertTextFormat.Snippet
+        items.append(item)
     return items
 
 
@@ -293,6 +303,7 @@ def _complete_yaml(
     images: Sequence[str],
     data_files: Sequence[str],
     apis: Sequence[str],
+    snippets: bool,
 ) -> list[CompletionItem]:
     found = yaml_cursor.cursor(text, position, catalog)
 
@@ -317,7 +328,7 @@ def _complete_yaml(
         if found.place != "step":
             return _modules(found, ast)
         if found.param < 0:
-            return _steps(found, ast, catalog)
+            return _steps(found, ast, catalog, snippets=snippets)
         return _params(
             found,
             ast,
@@ -349,6 +360,7 @@ def complete(
     images: Sequence[str] = (),
     data_files: Sequence[str] = (),
     apis: Sequence[str] = (),
+    snippets: bool = False,
 ) -> list[CompletionItem]:
     if is_yaml(uri):
         return _complete_yaml(
@@ -359,6 +371,7 @@ def complete(
             images=images,
             data_files=data_files,
             apis=apis,
+            snippets=snippets,
         )
 
     cursor = Cursor(text, position)

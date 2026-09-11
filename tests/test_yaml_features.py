@@ -87,10 +87,28 @@ def _marked(text, ast=None):
 def test_a_clean_yaml_suite_is_quiet():
     assert _codes((YAML_URI, SUITE)) == []
 
-def test_a_literal_param_is_reported_as_the_yaml_trap_it_is():
-    """`Sleep 5` becomes the keyword `sleep 5`, which nothing answers to."""
-    got = _codes((YAML_URI, "Modules:\n  - M:\n      - Sleep 5\n"))
-    assert got == [(YAML_URI, "yaml-step-without-variable", 3)]
+def test_a_literal_first_param_is_quiet():
+    """`Sleep 5` resolves: the catalog ends the keyword name, so the param is a param.
+    This was `yaml-step-without-variable`, a rule that described the old splitter."""
+    assert _codes((YAML_URI, "Modules:\n  - M:\n      - Sleep 5\n")) == []
+
+
+def test_a_module_wins_over_the_catalog_split():
+    """`Sleep Well` is the module, not `Sleep` with a param — as the runner resolves it."""
+    suite = (
+        "Modules:\n"
+        "  - M:\n"
+        "      - Sleep Well\n"
+        "  - Sleep Well:\n"
+        "      - Sleep 1\n"
+    )
+    assert _codes((YAML_URI, suite)) == []
+
+
+def test_a_literal_param_is_still_counted_for_arity():
+    """Splitting the params off is what lets the arity rule see them at all."""
+    got = _codes((YAML_URI, "Modules:\n  - M:\n      - Sleep 1 2 3\n"))
+    assert got == [(YAML_URI, "keyword-arity", 3)]
 
 def test_a_real_multi_word_keyword_is_not_reported():
     assert _codes((YAML_URI, "Modules:\n  - M:\n      - Launch App\n")) == []
@@ -99,7 +117,8 @@ def test_an_unknown_one_word_step_is_still_a_plain_keyword_miss():
     got = _codes((YAML_URI, "Modules:\n  - M:\n      - Nonsense\n"))
     assert got == [(YAML_URI, "keyword-not-found", 3)]
 
-def test_a_csv_step_with_a_space_is_never_the_yaml_trap():
+def test_a_csv_keeps_its_params_in_columns():
+    """A csv cell is the keyword name whole, so `Sleep 5` there is a keyword miss."""
     csv = "module_name,module_step\nM,Sleep 5\n"
     got = _codes(("file:///w/m.csv", csv))
     assert got == [("file:///w/m.csv", "keyword-not-found", 2)]

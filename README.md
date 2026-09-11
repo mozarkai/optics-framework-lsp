@@ -122,7 +122,8 @@ Errors are a name that resolves to nothing, or a call the keyword rejects:
 | --- | --- |
 | `module-not-found` | a test step names a module no file defines |
 | `keyword-not-found` | a module step is neither a keyword nor another module |
-| `keyword-arity` | a keyword got too few or too many params |
+| `keyword-arity` | a keyword is missing a required param, or got more than it takes |
+| `keyword-param-repeated` | a `name=value` param given twice, or given by position as well |
 | `element-not-found` | a `${ref}` has no element and nothing binds it |
 
 Warnings mean it loads, but a row you wrote isn't doing what it looks like:

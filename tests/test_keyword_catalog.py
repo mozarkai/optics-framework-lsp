@@ -123,7 +123,39 @@ def test_too_few_params_is_reported():
     (diagnostic,) = [d for d in _check(
         "module_name,module_step,param_1,param_2\nM,Enter Text,${field},,\n"
     ) if d.code == "keyword-arity"]
-    assert "takes 2-7 params, got 1" in diagnostic.message
+    assert "needs 'text'" in diagnostic.message
+
+
+# --- name=value params, as `split_params_by_signature` reads them ------------- #
+
+def test_a_named_param_fills_its_slot():
+    (diagnostic,) = [d for d in _check(
+        "module_name,module_step,param_1,param_2\nM,Enter Text,${field},opt0=x\n"
+    ) if d.code == "keyword-arity"]
+    assert "needs 'text'" in diagnostic.message
+
+    assert "keyword-arity" not in [d.code for d in _check(
+        "module_name,module_step,param_1,param_2,param_3\nM,Enter Text,${field},hi,opt1=2\n"
+    )]
+
+
+def test_a_locator_strategy_is_not_a_named_param():
+    """`text` is no parameter of `Press Element`, so it stays the element."""
+    assert not [d for d in _check(
+        "module_name,module_step,param_1\nM,Press Element,text=Login\n"
+    ) if d.code.startswith("keyword-")]
+
+
+def test_a_param_given_twice_is_reported():
+    (by_name,) = [d for d in _check(
+        "module_name,module_step,param_1,param_2,param_3\nM,Press Element,${f},opt0=2,opt0=3\n"
+    ) if d.code == "keyword-param-repeated"]
+    assert "more than once" in by_name.message
+
+    (both_ways,) = [d for d in _check(
+        "module_name,module_step,param_1,param_2,param_3\nM,Press Element,${f},2,opt0=3\n"
+    ) if d.code == "keyword-param-repeated"]
+    assert "by position and by name" in both_ways.message
 
 
 def test_variadic_keyword_accepts_any_count():

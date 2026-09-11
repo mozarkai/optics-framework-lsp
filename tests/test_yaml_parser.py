@@ -1,5 +1,7 @@
 # File kind comes from top-level keys, not filename
 
+import pytest
+
 from optics_framework_lsp.parser.ast import kinds_of
 from optics_framework_lsp.parser.yaml_parser import parse_yaml_sources
 
@@ -100,6 +102,55 @@ def test_a_step_the_catalog_cannot_claim_at_all_stays_whole():
     ast = _parse("Modules:\n  - M:\n      - Login Flow\n")
     step = ast.modules[0].steps[0]
     assert (step.step_name, step.params) == ("Login Flow", [])
+
+
+@pytest.mark.parametrize(
+    "step, expected",
+    [
+        # A misspelt keyword whose leading words spell a shorter one is reported under the
+        # name it was written with, or the runner dispatches the shorter keyword and the
+        # "did you mean" hint never fires. `swipe by` continues `swipe by percentage`.
+        ("Swipe By Percent ${x} ${y}", ("Swipe By Percent", ["${x}", "${y}"])),
+        ("Enter Text Using Keybord ${f} hi", ("Enter Text Using Keybord", ["${f}", "hi"])),
+        ("Press Element With Indx ${el} 2", ("Press Element With Indx", ["${el}", "2"])),
+        # Nothing continues `scroll to`, but `scroll` takes two params and this leaves it
+        # three, so the words are part of a name rather than params.
+        ("Scroll To Element foo", ("Scroll To Element foo", [])),
+    ],
+)
+def test_a_misspelt_keyword_is_not_read_as_the_shorter_one_it_starts_with(step, expected):
+    ast = _parse(f"Modules:\n  - M:\n      - {step}\n")
+    found = ast.modules[0].steps[0]
+    assert (found.step_name, found.params) == expected
+
+
+@pytest.mark.parametrize(
+    "step, expected",
+    [
+        # The guard fires only on a bare word the catalog has something to say about.
+        ("Scroll down", ("Scroll", ["down"])),
+        ("Press Element Login", ("Press Element", ["Login"])),
+        ("Press Keycode ENTER", ("Press Keycode", ["ENTER"])),
+        # A variadic keyword has no param count to exceed.
+        ("Run Loop MyModule 3", ("Run Loop", ["MyModule", "3"])),
+        # The longer name spelt right is matched whole.
+        ("Enter Text Using Keyboard hello", ("Enter Text Using Keyboard", ["hello"])),
+        # Too many params, but the first is not a word, so this stays an arity report.
+        ("Sleep 5 extra", ("Sleep", ["5", "extra"])),
+    ],
+)
+def test_a_bare_word_param_is_still_a_param(step, expected):
+    ast = _parse(f"Modules:\n  - M:\n      - {step}\n")
+    found = ast.modules[0].steps[0]
+    assert (found.step_name, found.params) == expected
+
+
+def test_an_unknown_keyword_ends_at_the_token_holding_the_variable():
+    """Not at the `${` itself, or `text="` is read as part of the name and the keyword
+    reported is something no suggestion could match."""
+    ast = _parse('Modules:\n  - M:\n      - Slep text="${x}"\n')
+    found = ast.modules[0].steps[0]
+    assert (found.step_name, found.params) == ("Slep", ["text=${x}"])
 
 
 def test_a_module_name_wins_over_the_catalog():

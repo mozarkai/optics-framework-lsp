@@ -24,10 +24,6 @@ from .ast import AST, Block, Element, IssueKind, Locator, SourceIssue, Span, Ste
 # `data.get("Test Cases")`, so nothing else loads — however the file was classified.
 SECTIONS = {"test_cases": "Test Cases", "modules": "Modules", "elements": "Elements"}
 
-# `_parse_module_step`'s own pattern. Narrower than `validation.VAR`, which is about
-# what the runner substitutes rather than about where a step splits.
-_VAR = re.compile(r"\$\{[^{}]+\}")
-
 # A step has to be a string. `read_test_cases` does `step.strip()` and
 # `_parse_module_step` the same, so anything else raises an uncaught `AttributeError`
 # and the whole load dies before a single keyword runs.
@@ -173,6 +169,32 @@ def unwrap(token: str) -> str:
     return f"{key}={found['body']}" if sep else found["body"]
 
 
+# A word that could be part of a keyword's name: letters, and nothing else. A param that
+# is a number, a `${...}`, a `name=value`, a quoted value or a locator is none of these.
+_NAME_WORD = re.compile(r"^[A-Za-z][A-Za-z_]*$")
+
+
+def _mistyped(name: str, params: list[str]) -> bool:
+    """Whether a catalog match is really the front half of a misspelt longer keyword, as
+    `_mistyped` decides it in `data_reader`.
+
+    `Swipe By Percent ${x} ${y}` matches `swipe`, leaving `By` and `Percent` as params —
+    which the runner would dispatch, quietly doing the wrong thing instead of reporting an
+    unknown keyword. Two exact signals, and both need the next param to be a bare word:
+    the word continues a name the catalog knows (`swipe by` -> `swipe by percentage`), or
+    the match cannot hold this many params (`scroll` takes two, and this leaves it three).
+    """
+    if not params or not _NAME_WORD.match(params[0]):
+        return False
+
+    extended = slug(f"{name} {params[0]}") + " "
+    if any(known.startswith(extended) for known in CATALOG):
+        return True
+
+    found = CATALOG.get(slug(name))
+    return found is not None and not found.variadic and len(params) > len(found.params)
+
+
 def _split(
     text: str, words: list[re.Match], modules: frozenset[str]
 ) -> tuple[int, int] | None:
@@ -185,18 +207,29 @@ def _split(
     slug, which is how the reader matches it: `sleep well` names `Sleep Well` too.
 
     The catalog answers next because a keyword whose first param is a plain value has no
-    `${...}` to split on; `Sleep 5` used to be read as one keyword named `sleep 5`."""
+    `${...}` to split on; `Sleep 5` used to be read as one keyword named `sleep 5`. A match
+    that is really a misspelt longer name is passed over, so the step reports the name it
+    was written with.
+    """
     if slug(text) in modules:
         return None
 
     for count in range(len(words), 0, -1):
         name = text[words[0].start() : words[count - 1].end()]
-        if CATALOG.get(slug(name)) is not None:
-            after = words[count].start() if count < len(words) else len(text)
-            return words[count - 1].end(), after
+        if CATALOG.get(slug(name)) is None:
+            continue
+        rest = [unwrap(word.group()) for word in words[count:]]
+        if _mistyped(name, rest):
+            break
+        after = words[count].start() if count < len(words) else len(text)
+        return words[count - 1].end(), after
 
-    found = _VAR.search(text)
-    return (found.start(), found.start()) if found else None
+    # The name ends at the token holding the first `${...}`, not at the `${` itself, or
+    # `timeout=${t}` is cut in half and `timeout=` read as part of the keyword's name.
+    for word in words:
+        if "${" in word.group():
+            return word.start(), word.start()
+    return None
 
 
 def _module_step(

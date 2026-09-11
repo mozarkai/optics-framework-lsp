@@ -29,6 +29,7 @@ from .keyword_catalog import Catalog, Keyword, slug
 from .parser.ast import AST
 from .parser import is_yaml
 from .parser.csv_parser import filled_params
+from .parser.yaml_parser import tokens as step_tokens
 from .positions import from_utf16, to_utf16
 from .yaml_cursor import YamlCursor
 from .validation import (
@@ -269,6 +270,36 @@ def _call(name: str, keyword: Keyword) -> str:
     return " ".join([name.title(), *holes])
 
 
+def _param_names(
+    cursor: YamlCursor, catalog: Catalog | None, *, snippets: bool
+) -> list[CompletionItem]:
+    """The keyword's params, as `name="` with the cursor inside the quotes. Not where a
+    value is being typed -- a name there would nest -- and not one already written."""
+    keyword = (catalog or {}).get(cursor.step_name)
+    # Past the end of the line has nothing before it, which is where a step is written.
+    before = cursor.source[max(cursor.start - 1, 0) : cursor.start]
+    if keyword is None or cursor.partial.startswith("$") or (before and not before.isspace()):
+        return []
+
+    keys = (token.group().partition("=")[0] for token in step_tokens(cursor.source))
+    written = {key for key in keys if key in keyword.params}
+    # A slot a positional fills cannot be named too; the token being typed fills nothing.
+    taken = max(cursor.params - bool(cursor.partial) - len(written), 0)
+
+    items = []
+    for name in keyword.params[taken:]:
+        if name in written:
+            continue
+        default = keyword.defaults.get(name)
+        detail = f"param, {default} if omitted" if default else "param"
+        item = _item(cursor, f"{name}=", CompletionItemKind.Property, detail, f"{name}=")
+        if snippets:
+            item.text_edit = cursor.replacement(f'{name}="$0"')
+            item.insert_text_format = InsertTextFormat.Snippet
+        items.append(item)
+    return items
+
+
 def _steps(
     cursor: AnyCursor, ast: AST, catalog: Catalog | None, *, snippets: bool = False
 ) -> list[CompletionItem]:
@@ -339,7 +370,7 @@ def _complete_yaml(
             found.param,
             data_files=data_files,
             apis=apis,
-        )
+        ) + _param_names(found, catalog, snippets=snippets)
 
     if found.section == "elements":
         if found.place == "locator":

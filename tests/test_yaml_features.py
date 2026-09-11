@@ -63,6 +63,23 @@ def _codes(*sources):
     found = validate(parse_sources(list(sources)), CATALOG)
     return sorted((uri, f.code, f.row) for uri, fs in found.items() for f in fs)
 
+NAMED = (
+    "Modules:\n"
+    "  - M:\n"
+    '      - Read Data name="${row}" path="d.csv"\n'
+    "      - Press Element ${row}\n"
+    '      - Run Loop target="Other"\n'
+    '      - Enter Text element="${missing}" text="hi"\n'
+    "  - Other:\n"
+    "      - Launch App\n"
+)
+
+def test_a_param_written_by_name_binds_the_slot_its_name_gives():
+    """`name=` declares its variable and `target=` runs its module wherever they are
+    written, so neither reads as missing. The one real mistake, a ref inside a
+    named param, is found — by position it was not even looked at."""
+    assert _codes((YAML_URI, NAMED)) == [(YAML_URI, "element-not-found", 6)]
+
 CONDITION = (
     "Modules:\n"
     "  - Go:\n"

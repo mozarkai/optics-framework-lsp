@@ -262,7 +262,16 @@ def completions(
         images=images(files),
         data_files=data_files(to_fs_path(folder), files, ast),
         apis=apis(sources),
+        snippets=_snippets(ls),
     )
+
+
+def _snippets(ls: OpticsLanguageServer) -> bool:
+    """A client that does not understand `${1:name}` would insert it literally."""
+    found = ls.client_capabilities.text_document
+    for attr in ("completion", "completion_item", "snippet_support"):
+        found = getattr(found, attr, None)
+    return bool(found)
 
 
 @server.feature(

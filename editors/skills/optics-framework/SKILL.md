@@ -59,8 +59,10 @@ YAML is a real peer of CSV at run time, but it is undocumented, no sample ships 
 YAML, these three all fail *silently* — the reader logs and carries on with an empty section, so
 the run fails somewhere that says nothing about the cause:
 
-1. **A param cannot contain a space.** The params are whitespace-split after YAML quoting is
-   gone, so `Enter Text ${f} hello world` passes three params, not two. Use CSV for that.
+1. **A param holding a space has to be quoted.** The params are whitespace-split after YAML
+   quoting is gone, so `Enter Text ${f} hello world` passes three params, not two. Write
+   `text="hello world"`, which the reader unwraps back to one. The quotes inside a locator
+   (`//button[@id="save"]`) are not around the whole value, so they stay.
 2. **Section keys are read with the case intact** — exactly `Test Cases`, `Modules`, `Elements`.
    Writing `test_cases:` still gets the file classified as test cases, and then read as empty.
 3. **`Test Cases` and `Modules` must be lists of single-key mappings.** Written as a plain

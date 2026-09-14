@@ -144,7 +144,6 @@ that says nothing about the cause. These are errors:
 
 | code | meaning |
 | --- | --- |
-| `yaml-step-without-variable` | a step with no `${...}`, so its params are swallowed into the keyword name and `Sleep 5` looks up `sleep_5` |
 | `yaml-section-key-case` | `test_cases:` where the reader looks up `Test Cases`, so the section loads empty |
 | `yaml-section-shape` | `Test Cases` or `Modules` as a mapping rather than a list of single-key mappings, which aborts the run |
 | `yaml-step-not-a-string` | anything else as a step, which aborts the run |

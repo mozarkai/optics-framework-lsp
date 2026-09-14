@@ -291,6 +291,26 @@ async def test_completion_signature_and_hover_over_lsp(catalog_client, catalog_p
     assert ":param element:" in hover.contents.value
 
 
+def test_snippets_follow_what_the_client_declared():
+    """Real capability objects, so the attribute path is checked against lsprotocol."""
+    from types import SimpleNamespace
+
+    from optics_framework_lsp.server import _snippets
+
+    def client(item):
+        caps = types.ClientCapabilities(
+            text_document=types.TextDocumentClientCapabilities(
+                completion=types.CompletionClientCapabilities(completion_item=item)
+            )
+        )
+        return SimpleNamespace(client_capabilities=caps)
+
+    supports = types.ClientCompletionItemOptions(snippet_support=True)
+    assert _snippets(client(supports))
+    assert not _snippets(client(types.ClientCompletionItemOptions()))
+    assert not _snippets(SimpleNamespace(client_capabilities=types.ClientCapabilities()))
+
+
 async def test_dot_folders_are_not_scanned(catalog_client, catalog_project):
     """optics-framework ships sample csvs of its own; they must stay invisible.
 
@@ -496,6 +516,7 @@ MIXED = {
         "  - Open It:\n"
         "      - Press Element ${btn}\n"
         "      - Sleep 5\n"
+        "      - Slep 5\n"
         "Elements:\n"
         "  btn: //a\n"
     ),
@@ -545,12 +566,13 @@ async def test_signature_help_triggers_on_a_space(mixed_client: LanguageClient):
 
 
 async def test_yaml_diagnostics_over_lsp(mixed_client: LanguageClient, mixed_workspace):
-    """`Sleep 5` has no `${...}`, so optics reads the whole line as the keyword name."""
+    """A yaml step's keyword is resolved from the catalog, so `Slep 5` misses on the name
+    alone while the `Sleep 5` beside it is clean."""
     uri = (mixed_workspace / "suite.yaml").as_uri()
-    (diagnostic,) = await codes_for(mixed_client, uri, ["yaml-step-without-variable"])
+    (diagnostic,) = await codes_for(mixed_client, uri, ["keyword-not-found"])
 
-    assert diagnostic.range.start.line == 3
-    assert "Sleep 5" in diagnostic.message
+    assert diagnostic.range.start.line == 4
+    assert "Slep" in diagnostic.message
     assert diagnostic.source == "optics"
 
 

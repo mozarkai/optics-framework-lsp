@@ -9,9 +9,9 @@ from lsprotocol.types import Position, Range, TextEdit
 
 from . import yaml_cursor
 from .completion import Cursor, param_symbol, yaml_symbol_at
-from .keyword_catalog import Catalog, slug
+from .keyword_catalog import Catalog, slots, slug
 from .parser import is_yaml
-from .parser.ast import Step
+from .parser.ast import Span, Step
 from .parser.csv_parser import filled_params, sheet, spans
 from .parser.yaml_parser import parse_yaml_sources
 from .positions import to_utf16
@@ -72,6 +72,7 @@ def _in_row(
     filled = filled_params(fields, headers)
     runs = runs_at(step, len(filled))
     binds = declares_at(step, len(filled))
+    bound = slots(step, [fields[column] for column in filled], catalog)
 
     for column, (start, end) in enumerate(places):
         cell = fields[column] if column < len(fields) else ""
@@ -86,44 +87,46 @@ def _in_row(
             if slug(cell) not in catalog:
                 yield start, end
         elif column in filled:
-            yield from _in_param(cell, start, filled.index(column), runs, binds, kind, name)
+            slot, value = bound[filled.index(column)]
+            yield from _in_param(
+                _value_start(cell, value, (start, end)), slot, value, runs, binds, kind, name
+            )
+
+
+def _value_start(cell: str, value: str, span: Span) -> int:
+    """Where a param's value starts in its span: past the `name=`, inside the quote the
+    span covers but the value does not. A csv cell is never quoted, so that term is 0."""
+    return span[0] + len(cell) - len(value) + (span[1] - span[0] == len(cell) + 2)
 
 
 def _in_param(
-    cell: str, start: int, param: int, runs: set[int], binds: set[int], kind: str, name: str
+    at: int, param: int, value: str,
+    runs: set[int], binds: set[int], kind: str, name: str,
 ) -> Iterator[tuple[int, int]]:
     if kind == "element":
-        for match in VAR.finditer(cell):
+        for match in VAR.finditer(value):
             if match.group(1) == name:
                 # Only the name moves; the ${} around it stays put.
-                yield start + match.start(1), start + match.end(1)
-        if param in binds and cell == name:
-            yield start, start + len(cell)
-    elif kind == "module" and param in runs and cell.removeprefix("!") == name:
+                yield at + match.start(1), at + match.end(1)
+        if param in binds and value == name:
+            yield at, at + len(value)
+    elif kind == "module" and param in runs and value.removeprefix("!") == name:
         # The `!` of an inverted condition stays; only the name after it moves.
-        yield start + len(cell) - len(name), start + len(cell)
+        yield at + len(value) - len(name), at + len(value)
 
 
 def _in_yaml_params(
-    uri: str, step: Step, kind: str, name: str
+    uri: str, step: Step, catalog: Catalog | None, kind: str, name: str
 ) -> Iterator[_Place]:
-    """The same rules as `_in_param`, against a step read whole rather than a row of
-    cells: a param's index is its place after the keyword."""
+    """`_in_param` over a step read whole, where a param's slot comes from its name."""
     runs = runs_at(step.step_name, len(step.params))
     binds = declares_at(step.step_name, len(step.params))
+    bound = slots(step.step_name, step.params, catalog)
 
-    for param, span in enumerate(step.param_spans):
-        cell = step.params[param]
-        if kind == "element":
-            for match in VAR.finditer(cell):
-                if match.group(1) == name:
-                    # Only the name moves; the ${} around it stays put.
-                    yield uri, step.row - 1, span[0] + match.start(1), span[0] + match.end(1)
-            if param in binds and cell == name:
-                yield uri, step.row - 1, *span
-        elif kind == "module" and param in runs and cell.removeprefix("!") == name:
-            # The `!` of an inverted condition stays; only the name after it moves.
-            yield uri, step.row - 1, span[0] + len(cell) - len(name), span[1]
+    for (slot, value), cell, span in zip(bound, step.params, step.param_spans):
+        at = _value_start(cell, value, span)
+        for start, end in _in_param(at, slot, value, runs, binds, kind, name):
+            yield uri, step.row - 1, start, end
 
 
 def _in_yaml(uri: str, text: str, catalog: Catalog, kind: str, name: str) -> Iterator[_Place]:
@@ -153,7 +156,7 @@ def _in_yaml(uri: str, text: str, catalog: Catalog, kind: str, name: str) -> Ite
             # A keyword of the same name wins, so that step is not this module.
             if named and slug(step.step_name) not in catalog and step.name_span:
                 yield uri, step.row - 1, *step.name_span
-            yield from _in_yaml_params(uri, step, kind, name)
+            yield from _in_yaml_params(uri, step, catalog, kind, name)
 
     if kind == "element":
         for element in ast.elements:

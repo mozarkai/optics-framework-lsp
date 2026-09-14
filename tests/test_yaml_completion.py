@@ -1,6 +1,6 @@
 # What a yaml suite offers where the cursor is, and what it says about a keyword.
 
-from lsprotocol.types import Position
+from lsprotocol.types import InsertTextFormat, Position
 
 from optics_framework_lsp import completion
 from optics_framework_lsp.keyword_catalog import Keyword
@@ -16,6 +16,8 @@ CATALOG = {
         params=["element", "text"], required=2, variadic=False, defaults={}, doc="",
     ),
     "sleep": Keyword(params=["duration"], required=1, variadic=False, defaults={}, doc=""),
+    # `direction` is one of the param names `PARAM_VALUES` knows the values of.
+    "scroll": Keyword(params=["direction"], required=1, variadic=False, defaults={}, doc=""),
     "read data": Keyword(
         params=["name", "path"], required=2, variadic=False, defaults={}, doc="",
     ),
@@ -102,18 +104,129 @@ def test_a_half_typed_keyword_is_replaced_whole():
     edit = next(i.text_edit for i in got if i.label == "Press Element")
     assert (edit.range.start.character, edit.range.end.character) == (8, 16)
 
+def _item(text, line, character, label, **kwargs):
+    got = completion.complete(
+        text, Position(line=line, character=character), _ast(), CATALOG, uri=YAML_URI, **kwargs
+    )
+    return next(i for i in got if i.label == label)
+
+def test_a_keyword_arrives_with_its_required_params():
+    """Tab walks the holes, so the step is finished by typing values rather than names."""
+    item = _item("Modules:\n  - M:\n      - ", 2, 8, "Enter Text", snippets=True)
+    assert item.text_edit.new_text == 'Enter Text element="${1:element}" text="${2:text}"'
+    assert item.insert_text_format == InsertTextFormat.Snippet
+
+def test_a_param_with_fixed_values_arrives_as_a_choice():
+    item = _item("Modules:\n  - M:\n      - ", 2, 8, "Scroll", snippets=True)
+    assert item.text_edit.new_text == 'Scroll direction="${1|up,down,left,right|}"'
+
+def test_an_optional_param_is_left_out():
+    """`index` defaults, so writing it would be noise to delete."""
+    item = _item("Modules:\n  - M:\n      - ", 2, 8, "Press Element", snippets=True)
+    assert item.text_edit.new_text == 'Press Element element="${1:element}"'
+
+def test_a_keyword_needing_nothing_stays_a_plain_insert():
+    item = _item("Modules:\n  - M:\n      - ", 2, 8, "Launch App", snippets=True)
+    assert item.text_edit.new_text == "Launch App" and item.insert_text_format is None
+
+def test_a_client_without_snippet_support_gets_the_name_alone():
+    item = _item("Modules:\n  - M:\n      - ", 2, 8, "Enter Text")
+    assert item.text_edit.new_text == "Enter Text" and item.insert_text_format is None
+
+def test_a_csv_never_gets_a_snippet():
+    """Each param is its own cell there, so there is nothing to walk."""
+    got = completion.complete(
+        "module_name,module_step\nM,",
+        Position(line=1, character=2),
+        _ast(),
+        CATALOG,
+        uri=CSV_URI,
+        snippets=True,
+    )
+    item = next(i for i in got if i.label == "Enter Text")
+    assert item.text_edit.new_text == "Enter Text"
+
+STEP = "Modules:\n  - M:\n      - {}\nElements:\n  save: //a\n"
+
+def _offered(step, **kwargs):
+    """A step with `|` for the cursor: what is offered there."""
+    text = STEP.format(step.replace("|", ""))
+    where = Position(line=2, character=len("      - ") + step.index("|"))
+    return completion.complete(text, where, _ast((YAML_URI, text)), CATALOG, uri=YAML_URI, **kwargs)
+
+def _applied(step, label, **kwargs):
+    """The step line after accepting `label`, which is what checks the edit's range."""
+    line = "      - " + step.replace("|", "")
+    edit = next(i.text_edit for i in _offered(step, **kwargs) if i.label == label)
+    got = line[: edit.range.start.character] + edit.new_text + line[edit.range.end.character :]
+    return got[len("      - ") :]
+
+def test_a_param_arrives_named_with_the_cursor_inside_its_quotes():
+    """`$0` is where the editor leaves the cursor, so the value is typed straight away."""
+    item = next(i for i in _offered("Enter Text ${f} te|", snippets=True) if i.label == "text=")
+    assert item.text_edit.new_text == 'text="$0"'
+    assert item.insert_text_format == InsertTextFormat.Snippet
+    assert _applied("Enter Text ${f} te|", "text=", snippets=True) == 'Enter Text ${f} text="$0"'
+    # A client that cannot place a cursor gets the name and nothing to delete.
+    assert _applied("Enter Text ${f} te|", "text=") == "Enter Text ${f} text="
+
+def test_a_param_already_written_is_not_offered_again():
+    got = [i.label for i in _offered('Press Element index="0" |')]
+    assert "index=" not in got and "element=" in got
+
+def test_no_param_name_is_offered_where_a_value_is_being_typed():
+    """A name inside `text="..."` or a `${` would nest inside the value."""
+    assert [i.label for i in _offered('Enter Text ${f} text="|"')] == ["save"]
+    assert [i.label for i in _offered("Press Element ${|}")] == ["save"]
+
+def test_a_ref_inside_a_named_param_is_completed_in_place():
+    """The `name="` is not part of what is being typed, so replacing the whole token
+    would both nest and stop the client from matching what was typed against it."""
+    assert _applied('Press Element element="${|}"', "save") == 'Press Element element="${save}"'
+
+def test_a_named_param_offers_what_that_param_holds():
+    assert [i.label for i in _offered('Scroll direction="|"')] == ["up", "down", "left", "right"]
+    assert _applied('Scroll direction="|"', "up") == 'Scroll direction="up"'
+
+def test_the_name_decides_the_slot_rather_than_the_position():
+    """`element` is press element's first param wherever it is written. By position this
+    token is the second, `index`, which holds a number and so offers nothing."""
+    assert [i.label for i in _offered('Press Element index="0" element="${|}"')] == ["save"]
+    assert _offered('Press Element ${save} index="|"') == []
+
+def test_a_positional_beside_a_named_param_binds_by_its_own_count():
+    """`index=` took the second slot, so the bare token is still the first, the element --
+    counting tokens instead would read it as the second and offer nothing."""
+    assert [i.label for i in _offered('Press Element index="0" ${|}')] == ["save"]
+
+def test_a_literal_param_still_reaches_the_variables_behind_a_dollar():
+    """The gate is on what is typed in the value, which `duration="` is not part of."""
+    assert [i.label for i in _offered('Sleep duration="${|}"')] == ["save"]
+    assert _offered('Sleep duration="|"') == []
+
+def test_a_locator_that_merely_holds_an_equals_is_one_value():
+    """`text=` is no param of press element, so the token is the element, as the runner
+    reads it -- completing inside it must not treat `text` as a name."""
+    assert _applied('Press Element text=|', "save") == "Press Element ${save}"
+
+def test_a_quoted_positional_value_is_completed_inside_its_quotes():
+    assert _applied('Press Element "${|}"', "save") == 'Press Element "${save}"'
+
 def test_a_param_slot_offers_the_projects_variables():
-    assert _complete("Modules:\n  - M:\n      - Press Element ", 2, 24) == ["save"]
+    """Plus the keyword's own params, which is the only way to write a later one."""
+    got = _complete("Modules:\n  - M:\n      - Press Element ", 2, 24)
+    assert got == ["save", "element=", "index="]
 
 def test_a_params_documented_values_win_over_variables():
     got = _complete("Modules:\n  - M:\n      - Read Data ${x} ", 2, 25, data_files=["d.csv"])
-    assert got == ["d.csv"]
+    # `name` is filled by the positional before it, so naming it again is not offered.
+    assert got == ["d.csv", "path="]
 
 def test_a_literal_param_offers_nothing_until_a_variable_is_started():
     # `index` is a number. Nothing belongs there, but `Press Element ${save} ${n}` is how
     # a yaml writes one, so the elements stay reachable behind the `$`.
     line = "Modules:\n  - M:\n      - Press Element ${save} "
-    assert _complete(line, 2, 31) == []
+    assert _complete(line, 2, 31) == ["index="]
     assert _complete(line + "${", 2, 33) == ["save"]
 
 def test_an_element_name_offers_what_is_used_but_undefined():

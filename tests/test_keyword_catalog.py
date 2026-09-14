@@ -15,7 +15,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 def test_the_shipped_table_is_the_real_signatures():
     """No install needed — this is the point of hardcoding."""
-    assert len(CATALOG) == 49
+    assert len(CATALOG) == 51
     assert OPTICS_VERSION
 
     press = CATALOG["press element"]
@@ -32,6 +32,14 @@ def test_the_shipped_table_is_the_real_signatures():
     assert sleep.doc.startswith("Sleep for a specified duration.")
     # And defaults, which hover and signature help both render.
     assert CATALOG["press element"].defaults["repeat"] == "'1'"
+
+
+def test_the_facade_keywords_are_in_the_table():
+    """`_parse_module_step` resolves against these two as well, so a step reading
+    `Press Element With Index ...` must not bind to the shorter `Press Element`."""
+    found = CATALOG["press element with index"]
+    assert (found.required, found.params) == (1, ["element", "index", "event_name"])
+    assert CATALOG["quit"].params == []
 
 
 def test_what_the_runtime_would_not_register_is_absent():
@@ -59,9 +67,37 @@ def test_a_deprecationwarning_decorator_excludes_a_keyword(tmp_path):
             "    def dropped(self, element): pass\n"
         )
 
+    _facade_source(tmp_path)
+
     found = _generator().signatures(tmp_path / "optics_framework")
     assert "kept" in found
     assert "dropped" not in found
+
+
+def _facade_source(root, names=("press_element_with_index", "quit")):
+    """The `optics.py` the generator reads the facade keywords out of."""
+    body = "class Optics:\n" + "".join(
+        f'    @keyword("x")\n    def {name}(self, element): pass\n' for name in names
+    )
+    (root / "optics_framework" / "optics.py").write_text(body)
+
+
+def test_a_facade_keyword_the_source_lost_is_loud(tmp_path):
+    """The pair is hardcoded here and in the runner. If the facade drops one, say so
+    rather than shipping a table that silently mis-splits every step naming it."""
+    api = tmp_path / "optics_framework" / "api"
+    api.mkdir(parents=True)
+    for module, class_name in (
+        ("action_keyword", "ActionKeyword"),
+        ("app_management", "AppManagement"),
+        ("flow_control", "FlowControl"),
+        ("verifier", "Verifier"),
+    ):
+        (api / f"{module}.py").write_text(f"class {class_name}:\n    def kept(self): pass\n")
+    _facade_source(tmp_path, names=("quit",))
+
+    with pytest.raises(SystemExit, match="press_element_with_index"):
+        _generator().signatures(tmp_path / "optics_framework")
 
 
 def _generator():

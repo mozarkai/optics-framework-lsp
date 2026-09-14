@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from functools import partial
 from operator import attrgetter
 
-from .keyword_catalog import Catalog, slots, slug
+from .keyword_catalog import Catalog, Keyword, slots, slug
 from .parser.ast import AST, ErrorDefinition, IssueKind, kinds_of
 from .parser.yaml_parser import CLASSIFY, SECTIONS
 
@@ -374,6 +374,27 @@ def _unknown_elements(ast: AST, catalog: Catalog | None) -> Iterator[_Keyed]:
             )
 
 
+def _split_params(
+    tokens: list[str], keyword: Keyword
+) -> tuple[list[str], set[str], list[str]]:
+    """Positional, `name=value`, and any name given twice, as `split_params_by_signature`
+    splits them. A key naming no parameter stays positional: that is what keeps a locator
+    strategy — `text=Login`, `css=…`, `id=…` — the element rather than a misspelt param."""
+    positional: list[str] = []
+    named: set[str] = set()
+    repeated: list[str] = []
+    for token in tokens:
+        key, sep, _ = token.partition("=")
+        key = key.strip()
+        if sep and key in keyword.params:
+            if key in named:
+                repeated.append(key)
+            named.add(key)
+            continue
+        positional.append(token)
+    return positional, named, repeated
+
+
 def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Keyed]:
     # Raw names: `get_module_definition` is a plain dict lookup, so case matters.
     modules = {m.name for m in ast.modules}
@@ -402,16 +423,34 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Keyed]:
                 )
                 continue
 
-            given = len(step.params)
-            most = None if keyword.variadic else len(keyword.params)
-            if given < keyword.required or (most is not None and given > most):
-                wanted = f"{keyword.required}+" if most is None else f"{keyword.required}-{most}"
+            positional, named, repeated = _split_params(step.params, keyword)
+
+            clashes = [(n, "more than once; the last wins") for n in repeated]
+            clashes += [
+                (n, "both by position and by name")
+                for n in named
+                if keyword.params.index(n) < len(positional)
+            ]
+            for name, why in clashes:
                 yield _diag(
                     module.uri,
                     step.row,
                     ERROR,
-                    "keyword-arity",
-                    f"{step.step_name!r} takes {wanted} params, got {given}",
+                    "keyword-param-repeated",
+                    f"{name!r} is given {why}",
+                )
+
+            filled = set(keyword.params[: len(positional)]) | named
+            missing = [n for n in keyword.params[: keyword.required] if n not in filled]
+            most = None if keyword.variadic else len(keyword.params)
+            detail = None
+            if missing:
+                detail = f"needs {', '.join(map(repr, missing))}"
+            elif most is not None and len(positional) > most:
+                detail = f"takes {keyword.required}-{most} params, got {len(positional)}"
+            if detail:
+                yield _diag(
+                    module.uri, step.row, ERROR, "keyword-arity", f"{step.step_name!r} {detail}"
                 )
 
 

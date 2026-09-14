@@ -12,6 +12,7 @@ from lsprotocol.types import (
     CompletionItem,
     CompletionItemKind,
     Hover,
+    InsertTextFormat,
     Location,
     MarkupContent,
     MarkupKind,
@@ -28,6 +29,7 @@ from .keyword_catalog import Catalog, Keyword, slug
 from .parser.ast import AST
 from .parser import is_yaml
 from .parser.csv_parser import filled_params
+from .parser.yaml_parser import tokens as step_tokens
 from .positions import from_utf16, to_utf16
 from .yaml_cursor import YamlCursor
 from .validation import (
@@ -204,8 +206,10 @@ def _listing(
     return [_item(cursor, name, kind, detail, name) for name in names]
 
 
-def _variables(cursor: AnyCursor, ast: AST) -> list[CompletionItem]:
-    names = {e.name for e in ast.elements} | declared(ast)
+def _variables(
+    cursor: AnyCursor, ast: AST, catalog: Catalog | None = None
+) -> list[CompletionItem]:
+    names = {e.name for e in ast.elements} | declared(ast, catalog)
     return [
         _item(cursor, name, CompletionItemKind.Variable, "element", f"${{{name}}}")
         for name in sorted(names)
@@ -229,7 +233,7 @@ def _params(
     # condition is either a module, optionally !-inverted, or an expression.
     if name == "condition":
         modules = _modules(cursor, ast, "!" if cursor.partial.startswith("!") else "")
-        return modules if param % 2 else modules + _variables(cursor, ast)
+        return modules if param % 2 else modules + _variables(cursor, ast, catalog)
 
     kind = PARAM_KINDS.get(name, {}).get(param)
     if kind == "module":
@@ -253,23 +257,62 @@ def _params(
     if param_name in _LITERAL and not cursor.partial.startswith("$"):
         return []
 
-    return _variables(cursor, ast)
+    return _variables(cursor, ast, catalog)
 
 
-def _steps(cursor: AnyCursor, ast: AST, catalog: Catalog | None) -> list[CompletionItem]:
+def _call(name: str, keyword: Keyword) -> str:
+    """The keyword with a hole per required param; a fixed-value one becomes a choice."""
+    holes = []
+    for at, param in enumerate(keyword.params[: keyword.required], start=1):
+        values = PARAM_VALUES.get(param)
+        hole = f"${{{at}|{','.join(values)}|}}" if values else f"${{{at}:{param}}}"
+        holes.append(f'{param}="{hole}"')
+    return " ".join([name.title(), *holes])
+
+
+def _param_names(
+    cursor: YamlCursor, catalog: Catalog | None, *, snippets: bool
+) -> list[CompletionItem]:
+    """The keyword's params, as `name="` with the cursor inside the quotes. Not where a
+    value is being typed -- a name there would nest -- and not one already written."""
+    keyword = (catalog or {}).get(cursor.step_name)
+    # Past the end of the line has nothing before it, which is where a step is written.
+    before = cursor.source[max(cursor.start - 1, 0) : cursor.start]
+    if keyword is None or cursor.partial.startswith("$") or (before and not before.isspace()):
+        return []
+
+    keys = (token.group().partition("=")[0] for token in step_tokens(cursor.source))
+    written = {key for key in keys if key in keyword.params}
+    # A slot a positional fills cannot be named too; the token being typed fills nothing.
+    taken = max(cursor.params - bool(cursor.partial) - len(written), 0)
+
+    items = []
+    for name in keyword.params[taken:]:
+        if name in written:
+            continue
+        default = keyword.defaults.get(name)
+        detail = f"param, {default} if omitted" if default else "param"
+        item = _item(cursor, f"{name}=", CompletionItemKind.Property, detail, f"{name}=")
+        if snippets:
+            item.text_edit = cursor.replacement(f'{name}="$0"')
+            item.insert_text_format = InsertTextFormat.Snippet
+        items.append(item)
+    return items
+
+
+def _steps(
+    cursor: AnyCursor, ast: AST, catalog: Catalog | None, *, snippets: bool = False
+) -> list[CompletionItem]:
     """What a step may name: any keyword, or any module for a nested call."""
     items = _modules(cursor, ast)
     for name, keyword in sorted((catalog or {}).items()):
         label = name.title()
-        items.append(
-            _item(
-                cursor,
-                label,
-                CompletionItemKind.Keyword,
-                ", ".join(keyword.params) or "no params",
-                label,
-            )
-        )
+        detail = ", ".join(keyword.params) or "no params"
+        item = _item(cursor, label, CompletionItemKind.Keyword, detail, label)
+        if snippets and keyword.required:
+            item.text_edit = cursor.replacement(_call(name, keyword))
+            item.insert_text_format = InsertTextFormat.Snippet
+        items.append(item)
     return items
 
 
@@ -293,6 +336,7 @@ def _complete_yaml(
     images: Sequence[str],
     data_files: Sequence[str],
     apis: Sequence[str],
+    snippets: bool,
 ) -> list[CompletionItem]:
     found = yaml_cursor.cursor(text, position, catalog)
 
@@ -317,7 +361,7 @@ def _complete_yaml(
         if found.place != "step":
             return _modules(found, ast)
         if found.param < 0:
-            return _steps(found, ast, catalog)
+            return _steps(found, ast, catalog, snippets=snippets)
         return _params(
             found,
             ast,
@@ -326,7 +370,7 @@ def _complete_yaml(
             found.param,
             data_files=data_files,
             apis=apis,
-        )
+        ) + _param_names(found, catalog, snippets=snippets)
 
     if found.section == "elements":
         if found.place == "locator":
@@ -334,7 +378,7 @@ def _complete_yaml(
             # image locator is the bare filename of a template in the project.
             return _listing(found, images, CompletionItemKind.File, "template image")
         kind = CompletionItemKind.Variable
-        return _listing(found, sorted(undefined(ast)), kind, "used, not defined")
+        return _listing(found, sorted(undefined(ast, catalog)), kind, "used, not defined")
 
     return []
 
@@ -349,6 +393,7 @@ def complete(
     images: Sequence[str] = (),
     data_files: Sequence[str] = (),
     apis: Sequence[str] = (),
+    snippets: bool = False,
 ) -> list[CompletionItem]:
     if is_yaml(uri):
         return _complete_yaml(
@@ -359,6 +404,7 @@ def complete(
             images=images,
             data_files=data_files,
             apis=apis,
+            snippets=snippets,
         )
 
     cursor = Cursor(text, position)
@@ -397,7 +443,7 @@ def complete(
     # Defining an element is how an element-not-found gets fixed, so offer those names.
     if cursor.column == cursor.column_of("element_name"):
         kind = CompletionItemKind.Variable
-        return _listing(cursor, sorted(undefined(ast)), kind, "used, not defined")
+        return _listing(cursor, sorted(undefined(ast, catalog)), kind, "used, not defined")
 
     # An id is usually an xpath or literal text, which we cannot guess, but an image
     # locator is the bare filename of a template somewhere in the project. Any
@@ -631,7 +677,7 @@ def references(
     if kind == "module":
         # A Condition names a module to run, which validation cannot assume, and so does
         # a step cell — but only when no keyword claims the name first.
-        seen = list(module_refs(ast)) + list(module_conditions(ast)) + [
+        seen = list(module_refs(ast, catalog)) + list(module_conditions(ast)) + [
             (m.uri, step.row, step.step_name)
             for m in ast.modules
             for step in m.steps
@@ -640,9 +686,9 @@ def references(
         uses = [_at(uri, row) for uri, row, n in seen if n == name]
         declared_at = [_at(m.uri, m.start_row) for m in ast.modules if m.name == name]
     elif kind == "element":
-        uses = [_at(uri, row) for uri, row, n in element_refs(ast) if n == name]
+        uses = [_at(uri, row) for uri, row, n in element_refs(ast, catalog) if n == name]
         declared_at = [_at(e.uri, e.row) for e in ast.elements if e.name == name] + [
-            _at(uri, row) for uri, row, n in declarations(ast) if n == name
+            _at(uri, row) for uri, row, n in declarations(ast, catalog) if n == name
         ]
     elif kind == "keyword":
         # The framework defines it, so there is nothing here to declare.

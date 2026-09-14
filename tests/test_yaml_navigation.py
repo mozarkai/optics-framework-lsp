@@ -184,6 +184,33 @@ def test_renaming_an_element_reaches_a_name_a_step_binds():
     assert edits is not None
     assert "Run Loop ${target} index ${items}" in _applied(edits, YAML_URI, text)
 
+def test_renaming_an_element_inside_a_quoted_param_moves_the_name_alone():
+    """The span covers the quotes the reader strips, so an edit measured from its start
+    lands one character early and leaves `element="$button}"` behind."""
+    text = 'Modules:\n  - M:\n      - Press Element element="${save}"\nElements:\n  save: //a\n'
+    edits = renaming.rename(
+        [(YAML_URI, text)], CATALOG, text, _at("${save}", 2, text), "button", uri=YAML_URI
+    )
+    assert edits is not None
+    got = _applied(edits, YAML_URI, text)
+    assert 'Press Element element="${button}"' in got and "  button: //a" in got
+
+def test_renaming_a_module_reaches_one_a_param_names():
+    """`target=` runs the module wherever it is written, so that is a call site too."""
+    text = (
+        "Modules:\n"
+        "  - M:\n"
+        '      - Run Loop target="Other" 2\n'
+        "  - Other:\n"
+        "      - Launch App\n"
+    )
+    edits = renaming.rename(
+        [(YAML_URI, text)], CATALOG, text, _at("- Other:", 4, text), "Later", uri=YAML_URI
+    )
+    assert edits is not None
+    got = _applied(edits, YAML_URI, text)
+    assert 'Run Loop target="Later" 2' in got and "  - Later:" in got
+
 def test_references_reach_a_module_in_a_condition_target():
     found = completion.references(
         CONDITION, _at("- Target:", 4, CONDITION), _ast((YAML_URI, CONDITION)),

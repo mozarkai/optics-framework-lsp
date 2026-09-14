@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from functools import partial
 from operator import attrgetter
 
-from .keyword_catalog import Catalog, slug
+from .keyword_catalog import Catalog, slots, slug
 from .parser.ast import AST, ErrorDefinition, IssueKind, kinds_of
 from .parser.yaml_parser import CLASSIFY, SECTIONS
 
@@ -251,7 +251,7 @@ def runs_at(step_name: str | None, count: int) -> set[int]:
     return set(range(count)) if slug(step_name) == "condition" else module_args(step_name, count)
 
 
-def module_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
+def module_refs(ast: AST, catalog: Catalog | None = None) -> Iterator[tuple[str, int, str]]:
     """Every place a module is named: a test case step, or a param that runs one."""
     for test_case in ast.test_cases:
         for step in test_case.steps:
@@ -260,8 +260,10 @@ def module_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
 
     for module in ast.modules:
         for step in module.steps:
-            for i in module_args(step.step_name, len(step.params)):
-                yield module.uri, step.row, step.params[i]
+            runs = module_args(step.step_name, len(step.params))
+            for at, value in slots(step.step_name, step.params, catalog):
+                if at in runs:
+                    yield module.uri, step.row, value
 
 
 def module_conditions(ast: AST) -> Iterator[tuple[str, int, str]]:
@@ -280,12 +282,12 @@ def module_conditions(ast: AST) -> Iterator[tuple[str, int, str]]:
                     yield module.uri, step.row, param.removeprefix("!").strip()
 
 
-def _unknown_modules(ast: AST) -> Iterator[_Keyed]:
+def _unknown_modules(ast: AST, catalog: Catalog | None) -> Iterator[_Keyed]:
     # A ${name} is reported like any other: nothing substitutes it first. The runner
     # hands params to the keyword untouched, and `execute_module` indexes the dict raw.
     known = {b.name for b in ast.modules}
 
-    for uri, row, name in module_refs(ast):
+    for uri, row, name in module_refs(ast, catalog):
         if name not in known:
             yield _diag(
                 uri,
@@ -296,20 +298,19 @@ def _unknown_modules(ast: AST) -> Iterator[_Keyed]:
             )
 
 
-def declarations(ast: AST) -> Iterator[tuple[str, int, str]]:
+def declarations(ast: AST, catalog: Catalog | None = None) -> Iterator[tuple[str, int, str]]:
     """Every place a name is bound at run time, as uri, row, name."""
     for module in ast.modules:
         for step in module.steps:
-            where = _DECLARES.get(slug(step.step_name))
-            if where is not None:
-                for bound in step.params[where]:
-                    if bound:
-                        yield module.uri, step.row, _bare(bound)
+            binds = declares_at(step.step_name, len(step.params))
+            for at, value in slots(step.step_name, step.params, catalog):
+                if at in binds and value:
+                    yield module.uri, step.row, _bare(value)
 
 
-def declared(ast: AST) -> set[str]:
+def declared(ast: AST, catalog: Catalog | None = None) -> set[str]:
     """Names bound at run time rather than defined in an elements csv."""
-    return {name for _, _, name in declarations(ast)}
+    return {name for _, _, name in declarations(ast, catalog)}
 
 
 def substitutes_at(step_name: str | None, count: int) -> set[int]:
@@ -330,7 +331,7 @@ def substitutes_at(step_name: str | None, count: int) -> set[int]:
     return set()
 
 
-def element_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
+def element_refs(ast: AST, catalog: Catalog | None = None) -> Iterator[tuple[str, int, str]]:
     """Every ${name} a module step actually resolves, as uri, row, name.
 
     Not the step-name cell: the runner looks that up in `keyword_map`, so a `${ref}` there is
@@ -342,7 +343,7 @@ def element_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
             binds = declares_at(step.step_name, count)
             embeds = substitutes_at(step.step_name, count)
 
-            for at, cell in enumerate(step.params):
+            for at, cell in slots(step.step_name, step.params, catalog):
                 # A declaring keyword names its target, it does not reference it.
                 if at in binds:
                     continue
@@ -353,16 +354,16 @@ def element_refs(ast: AST) -> Iterator[tuple[str, int, str]]:
                         yield module.uri, step.row, name
 
 
-def undefined(ast: AST) -> set[str]:
+def undefined(ast: AST, catalog: Catalog | None = None) -> set[str]:
     """Names read but never defined: what element-not-found reports."""
-    known = {e.name for e in ast.elements} | declared(ast)
-    return {name for _, _, name in element_refs(ast) if name not in known}
+    known = {e.name for e in ast.elements} | declared(ast, catalog)
+    return {name for _, _, name in element_refs(ast, catalog) if name not in known}
 
 
-def _unknown_elements(ast: AST) -> Iterator[_Keyed]:
-    known = {e.name for e in ast.elements} | declared(ast)
+def _unknown_elements(ast: AST, catalog: Catalog | None) -> Iterator[_Keyed]:
+    known = {e.name for e in ast.elements} | declared(ast, catalog)
 
-    for uri, row, name in element_refs(ast):
+    for uri, row, name in element_refs(ast, catalog):
         if name not in known:
             yield _diag(
                 uri,
@@ -418,8 +419,8 @@ def validate(ast: AST, catalog: Catalog | None = None) -> dict[str, list[Finding
     rules = [
         _hygiene,
         _duplicates,
-        _unknown_modules,
-        _unknown_elements,
+        partial(_unknown_modules, catalog=catalog),
+        partial(_unknown_elements, catalog=catalog),
         _duplicate_errors,
         _incomplete_errors,
     ]

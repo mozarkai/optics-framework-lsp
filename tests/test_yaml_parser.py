@@ -1,5 +1,7 @@
 # File kind comes from top-level keys, not filename
 
+import pytest
+
 from optics_framework_lsp.parser.ast import kinds_of
 from optics_framework_lsp.parser.yaml_parser import parse_yaml_sources
 
@@ -102,6 +104,55 @@ def test_a_step_the_catalog_cannot_claim_at_all_stays_whole():
     assert (step.step_name, step.params) == ("Login Flow", [])
 
 
+@pytest.mark.parametrize(
+    "step, expected",
+    [
+        # A misspelt keyword whose leading words spell a shorter one is reported under the
+        # name it was written with, or the runner dispatches the shorter keyword and the
+        # "did you mean" hint never fires. `swipe by` continues `swipe by percentage`.
+        ("Swipe By Percent ${x} ${y}", ("Swipe By Percent", ["${x}", "${y}"])),
+        ("Enter Text Using Keybord ${f} hi", ("Enter Text Using Keybord", ["${f}", "hi"])),
+        ("Press Element With Indx ${el} 2", ("Press Element With Indx", ["${el}", "2"])),
+        # Nothing continues `scroll to`, but `scroll` takes two params and this leaves it
+        # three, so the words are part of a name rather than params.
+        ("Scroll To Element foo", ("Scroll To Element foo", [])),
+    ],
+)
+def test_a_misspelt_keyword_is_not_read_as_the_shorter_one_it_starts_with(step, expected):
+    ast = _parse(f"Modules:\n  - M:\n      - {step}\n")
+    found = ast.modules[0].steps[0]
+    assert (found.step_name, found.params) == expected
+
+
+@pytest.mark.parametrize(
+    "step, expected",
+    [
+        # The guard fires only on a bare word the catalog has something to say about.
+        ("Scroll down", ("Scroll", ["down"])),
+        ("Press Element Login", ("Press Element", ["Login"])),
+        ("Press Keycode ENTER", ("Press Keycode", ["ENTER"])),
+        # A variadic keyword has no param count to exceed.
+        ("Run Loop MyModule 3", ("Run Loop", ["MyModule", "3"])),
+        # The longer name spelt right is matched whole.
+        ("Enter Text Using Keyboard hello", ("Enter Text Using Keyboard", ["hello"])),
+        # Too many params, but the first is not a word, so this stays an arity report.
+        ("Sleep 5 extra", ("Sleep", ["5", "extra"])),
+    ],
+)
+def test_a_bare_word_param_is_still_a_param(step, expected):
+    ast = _parse(f"Modules:\n  - M:\n      - {step}\n")
+    found = ast.modules[0].steps[0]
+    assert (found.step_name, found.params) == expected
+
+
+def test_an_unknown_keyword_ends_at_the_token_holding_the_variable():
+    """Not at the `${` itself, or `text="` is read as part of the name and the keyword
+    reported is something no suggestion could match."""
+    ast = _parse('Modules:\n  - M:\n      - Slep text="${x}"\n')
+    found = ast.modules[0].steps[0]
+    assert (found.step_name, found.params) == ("Slep", ["text=${x}"])
+
+
 def test_a_module_name_wins_over_the_catalog():
     """`_parse_module_step` checks the project's module names before the catalogue, so a
     module called `Sleep Well` is that module and not `Sleep` with a param."""
@@ -149,6 +200,65 @@ def test_spans_point_at_the_keyword_and_each_param():
     assert step.name_span is not None
     assert line[slice(*step.name_span)] == "Enter Text"
     assert [line[slice(*s)] for s in step.param_spans] == ["${f}", "hi"]
+
+
+def test_a_quoted_value_holds_its_space():
+    """The only way a param can contain one: `param_str.split()` is quote-aware now."""
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} text="two words"\n')
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("Enter Text", ["${f}", "text=two words"])
+
+
+def test_a_quoted_positional_value_holds_its_space():
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} "two words"\n')
+    assert ast.modules[0].steps[0].params == ["${f}", "two words"]
+
+
+def test_a_locator_keeps_the_quotes_inside_it():
+    """They do not wrap the value, so they are part of it — unwrapping them would break
+    every double-quoted xpath."""
+    ast = _parse('Modules:\n  - M:\n      - Press Element //*[@text="a b"]\n')
+    assert ast.modules[0].steps[0].params == ['//*[@text="a b"]']
+
+
+def test_an_apostrophe_inside_a_quoted_value_is_not_an_unbalanced_quote():
+    """Counting quote characters read this as one and split the value the reader keeps
+    whole — `_unbalanced` asks the pattern whether it skipped anything instead."""
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} text="Bob\'s file"\n')
+    assert ast.modules[0].steps[0].params == ["${f}", "text=Bob's file"]
+
+
+def test_the_other_quote_character_inside_a_value_is_not_special():
+    ast = _parse("Modules:\n  - M:\n      - Enter Text ${f} text='say \"hi\" now'\n")
+    assert ast.modules[0].steps[0].params == ["${f}", 'text=say "hi" now']
+
+
+def test_a_quoted_value_without_a_space_gives_its_quotes_up_too():
+    """The form the yaml editor writes for every named param: the keyword is handed `2`,
+    never the three characters `"2"`."""
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} index="2"\n')
+    assert ast.modules[0].steps[0].params == ["${f}", "index=2"]
+
+
+def test_a_quoted_bare_word_is_a_value_and_not_part_of_the_name():
+    """Which is the escape hatch when a bare word would read as part of a keyword name."""
+    ast = _parse('Modules:\n  - M:\n      - Press Element "Login"\n')
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("Press Element", ["Login"])
+
+
+def test_an_unbalanced_quote_splits_as_before():
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} text="abc\n')
+    assert ast.modules[0].steps[0].params == ["${f}", 'text="abc']
+
+
+def test_a_quoted_param_span_covers_its_quotes():
+    """The step carries what the runner is given; the span covers what was written."""
+    ast = _parse('Modules:\n  - M:\n      - Enter Text ${f} text="two words"\n')
+    step = ast.modules[0].steps[0]
+    line = '      - Enter Text ${f} text="two words"'
+    assert [line[slice(*span)] for span in step.param_spans] == ["${f}", 'text="two words"']
+    assert step.params[1] == "text=two words"
 
 
 def test_a_quoted_step_is_measured_past_its_quote():

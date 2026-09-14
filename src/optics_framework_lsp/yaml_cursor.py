@@ -17,14 +17,15 @@ from dataclasses import dataclass
 from lsprotocol.types import Position, Range, TextEdit
 
 from .keyword_catalog import Catalog, slug
-from .parser.yaml_parser import CLASSIFY
+from .parser.yaml_parser import CLASSIFY, tokens as step_tokens
 from .positions import from_utf16, to_utf16
 
 # A sequence item and a mapping key. Matched against a partial line too, so both have
 # to tolerate one that stops mid-word.
 _ITEM = re.compile(r"^(\s*)-(\s*)(.*)$")
 _KEY = re.compile(r"^(\s*)(\S[^:]*?)\s*:(.*)$")
-_WORD = re.compile(r"\S+")
+# Tokenising matches the reader's: a quoted value is one word, so a cursor inside `text="a b"`
+# is inside one param rather than two. See `yaml_parser.tokens`.
 
 
 @dataclass(slots=True)
@@ -138,7 +139,7 @@ def _step(
     content_start: int, content: str, character: int, catalog: Catalog | None
 ) -> _Step:
     """The word the cursor is in and the word being typed, and which param each is."""
-    words = [(found.start(), found.group()) for found in _WORD.finditer(content)]
+    words = [(found.start(), found.group()) for found in step_tokens(content)]
     at = character - content_start
 
     if not words:

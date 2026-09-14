@@ -24,10 +24,6 @@ from .ast import AST, Block, Element, IssueKind, Locator, SourceIssue, Span, Ste
 # `data.get("Test Cases")`, so nothing else loads — however the file was classified.
 SECTIONS = {"test_cases": "Test Cases", "modules": "Modules", "elements": "Elements"}
 
-# `_parse_module_step`'s own pattern. Narrower than `validation.VAR`, which is about
-# what the runner substitutes rather than about where a step splits.
-_VAR = re.compile(r"\$\{[^{}]+\}")
-
 # A step has to be a string. `read_test_cases` does `step.strip()` and
 # `_parse_module_step` the same, so anything else raises an uncaught `AttributeError`
 # and the whole load dies before a single keyword runs.
@@ -137,6 +133,68 @@ def _test_step(node: yaml.Node, uri: str, issues: list[SourceIssue]) -> Step | N
     return Step(step_name=text, row=_row(node), name_span=at(0, len(text)))
 
 
+# A quoted run holds together, so a value written entirely in quotes can carry a space. The
+# quotes inside a locator (`//button[@id="save"]`) are not at the start of the value, so they
+# stay; `_unwrap` gives up only the ones wrapping a value whole.
+_TOKEN = re.compile(r"""(?:[^\s"']|"[^"]*"|'[^']*')+""")
+_WRAPPED = re.compile(r"""^(?P<q>["'])(?P<body>.*)(?P=q)$""", re.S)
+
+
+def _unbalanced(text: str) -> bool:
+    """Whether the token pattern would skip a non-whitespace character, which only an
+    unpaired quote makes it do. Counting each quote character instead reads the apostrophe
+    in `text="Bob's file"` as an unpaired one and splits a value the reader keeps whole."""
+    gap = 0
+    for match in _TOKEN.finditer(text):
+        if text[gap : match.start()].strip():
+            return True
+        gap = match.end()
+    return bool(text[gap:].strip())
+
+
+def tokens(text: str) -> list[re.Match]:
+    """A step's whitespace-separated tokens, as the reader splits them — quoted runs whole. An
+    unbalanced quote falls back to plain whitespace, which is what the reader does too."""
+    if _unbalanced(text):
+        return list(re.finditer(r"\S+", text))
+    return list(_TOKEN.finditer(text))
+
+
+def unwrap(token: str) -> str:
+    """The value the runner sees: a value written entirely in quotes without them."""
+    key, sep, value = token.partition("=")
+    found = _WRAPPED.match(value if sep else token)
+    if not found:
+        return token
+    return f"{key}={found['body']}" if sep else found["body"]
+
+
+# A word that could be part of a keyword's name: letters, and nothing else. A param that
+# is a number, a `${...}`, a `name=value`, a quoted value or a locator is none of these.
+_NAME_WORD = re.compile(r"^[A-Za-z][A-Za-z_]*$")
+
+
+def _mistyped(name: str, params: list[str]) -> bool:
+    """Whether a catalog match is really the front half of a misspelt longer keyword, as
+    `_mistyped` decides it in `data_reader`.
+
+    `Swipe By Percent ${x} ${y}` matches `swipe`, leaving `By` and `Percent` as params —
+    which the runner would dispatch, quietly doing the wrong thing instead of reporting an
+    unknown keyword. Two exact signals, and both need the next param to be a bare word:
+    the word continues a name the catalog knows (`swipe by` -> `swipe by percentage`), or
+    the match cannot hold this many params (`scroll` takes two, and this leaves it three).
+    """
+    if not params or not _NAME_WORD.match(params[0]):
+        return False
+
+    extended = slug(f"{name} {params[0]}") + " "
+    if any(known.startswith(extended) for known in CATALOG):
+        return True
+
+    found = CATALOG.get(slug(name))
+    return found is not None and not found.variadic and len(params) > len(found.params)
+
+
 def _split(
     text: str, words: list[re.Match], modules: frozenset[str]
 ) -> tuple[int, int] | None:
@@ -149,18 +207,29 @@ def _split(
     slug, which is how the reader matches it: `sleep well` names `Sleep Well` too.
 
     The catalog answers next because a keyword whose first param is a plain value has no
-    `${...}` to split on; `Sleep 5` used to be read as one keyword named `sleep 5`."""
+    `${...}` to split on; `Sleep 5` used to be read as one keyword named `sleep 5`. A match
+    that is really a misspelt longer name is passed over, so the step reports the name it
+    was written with.
+    """
     if slug(text) in modules:
         return None
 
     for count in range(len(words), 0, -1):
         name = text[words[0].start() : words[count - 1].end()]
-        if CATALOG.get(slug(name)) is not None:
-            after = words[count].start() if count < len(words) else len(text)
-            return words[count - 1].end(), after
+        if CATALOG.get(slug(name)) is None:
+            continue
+        rest = [unwrap(word.group()) for word in words[count:]]
+        if _mistyped(name, rest):
+            break
+        after = words[count].start() if count < len(words) else len(text)
+        return words[count - 1].end(), after
 
-    found = _VAR.search(text)
-    return (found.start(), found.start()) if found else None
+    # The name ends at the token holding the first `${...}`, not at the `${` itself, or
+    # `timeout=${t}` is cut in half and `timeout=` read as part of the keyword's name.
+    for word in words:
+        if "${" in word.group():
+            return word.start(), word.start()
+    return None
 
 
 def _module_step(
@@ -179,7 +248,7 @@ def _module_step(
     if not text:
         return None
 
-    words = list(re.finditer(r"\S+", text))
+    words = tokens(text)
     split = _split(text, words, modules)
     if split is None:
         # Neither the catalog nor a `${...}` claims any of it, so the reader takes the
@@ -193,13 +262,13 @@ def _module_step(
         # `_process_module_steps` drops a step whose keyword came out empty.
         return None
 
-    # `param_str.split()`, so a param cannot hold a space: yaml quoting is long gone by
-    # the time the reader gets here.
-    params = list(re.finditer(r"\S+", text[start:]))
+    # The span covers the quotes, the param does not: an editor should select what was
+    # written, while the step carries what the runner will be given.
+    params = tokens(text[start:])
     return Step(
         step_name=keyword,
         row=row,
-        params=[m.group() for m in params],
+        params=[unwrap(m.group()) for m in params],
         name_span=at(0, len(keyword)),
         # All or nothing: `at` answers for every index or for none, so this drops
         # every param's span together rather than misaligning them with `params`.

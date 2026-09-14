@@ -354,6 +354,30 @@ def test_error_definitions_are_reported_as_unread():
     assert ast.error_definitions == []
 
 
+API = (
+    "api:\n"
+    "  collections:\n"
+    "    alpha:\n"
+    "      base_url: https://example.test\n"
+    "      apis:\n"
+    "        first:\n"
+    "          endpoint: /one\n"
+    "          expected_result:\n"
+    "            extract:\n"
+    "              token: field_a\n"
+    "        second:\n"
+    "          endpoint: /two\n"
+    "          expected_result:\n"
+    "            extract:\n"
+    "              code: field_b\n"
+)
+
+
+def test_an_apis_extract_keys_are_elements():
+    ast = _parse(API)
+    assert [(e.name, e.row) for e in ast.elements] == [("token", 10), ("code", 15)]
+
+
 def test_an_api_file_is_classified_but_holds_no_suite():
     ast = _parse("api:\n  collections: {}\n")
     assert kinds_of(ast, URI) == {"api"}

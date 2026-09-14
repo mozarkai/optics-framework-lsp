@@ -281,6 +281,19 @@ def _module_step(
     )
 
 
+def _api_elements(node: yaml.Node, uri: str) -> Iterable[Element]:
+    """Every name an api's `extract` binds. `_extract_values_from_response` adds each key to
+    the store `read_elements` fills, so `${name}` reads one like any other — the value just
+    comes from the response rather than a cell, which is why there is no locator."""
+    for key, value in _pairs(node):
+        if _text(key) != "extract":
+            yield from _api_elements(value, uri)
+        else:
+            for name, _ in _pairs(value):
+                if text := _text(name):
+                    yield Element(text, [], uri, _row(name), _span(name))
+
+
 def _blocks(section: str, node: yaml.Node, uri: str, issues: list[SourceIssue], step):
     """A `Test Cases` or `Modules` section: a list of single-key mappings, each naming a
     block and listing its steps.
@@ -439,6 +452,8 @@ def _parse(ast: AST, uri: str, root: yaml.Node, modules: frozenset[str]) -> None
             )
         elif kind == "elements":
             ast.elements += _elements(value, uri, ast.issues)
+        elif kind == "api":
+            ast.elements += _api_elements(value, uri)
 
     if _config({_text(key) for key, _ in pairs}):
         kinds.append("config")

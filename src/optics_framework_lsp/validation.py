@@ -148,6 +148,9 @@ def _duplicates(ast: AST) -> Iterator[_Keyed]:
         + [
             ("element", e.name, e.uri, e.row, tuple(l.text for l in e.locators))
             for e in ast.elements
+            # An api rebinding a name replaces it rather than repeating it, and only an
+            # api-bound element carries no locator.
+            if e.locators
         ]
     ):
         seen[(kind, name, uri if kind == "element" else "")].append((uri, row, value))

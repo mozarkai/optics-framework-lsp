@@ -110,6 +110,44 @@ def test_a_literal_first_param_is_quiet():
     assert _codes((YAML_URI, "Modules:\n  - M:\n      - Sleep 5\n")) == []
 
 
+API_URI = "file:///w/test_data/api.yaml"
+
+API = (
+    "api:\n"
+    "  collections:\n"
+    "    alpha:\n"
+    "      apis:\n"
+    "        first:\n"
+    "          expected_result:\n"
+    "            extract:\n"
+    "              code: field_a\n"
+    "    beta:\n"
+    "      apis:\n"
+    "        second:\n"
+    "          expected_result:\n"
+    "            extract:\n"
+    "              code: field_a\n"
+)
+
+
+def test_a_name_an_api_extracts_is_defined():
+    """`Invoke API` binds it at run time."""
+    suite = "Modules:\n  - M:\n      - Press Element ${code}\n"
+    assert _codes((YAML_URI, suite), (API_URI, API)) == []
+
+
+def test_a_name_no_api_extracts_is_still_unknown():
+    suite = "Modules:\n  - M:\n      - Press Element ${nope}\n"
+    assert _codes((YAML_URI, suite), (API_URI, API)) == [
+        (YAML_URI, "element-not-found", 3)
+    ]
+
+
+def test_two_collections_extracting_one_name_is_not_a_duplicate():
+    """The second `add_element` replaces the first by design."""
+    assert _codes((API_URI, API)) == []
+
+
 def test_a_module_wins_over_the_catalog_split():
     """`Sleep Well` is the module, not `Sleep` with a param — as the runner resolves it."""
     suite = (

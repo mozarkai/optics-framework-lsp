@@ -39,7 +39,7 @@ def edit(client, uri, version, text):
 
 @pytest.fixture(scope="module")
 def workspace(tmp_path_factory):
-    root = tmp_path_factory.mktemp("project")
+    root = tmp_path_factory.mktemp("outer") / "my project"
     for name, content in WORKSPACE.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)

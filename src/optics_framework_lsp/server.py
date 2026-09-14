@@ -109,7 +109,18 @@ class OpticsLanguageServer(LanguageServer):
         self._published: defaultdict[str, set[str]] = defaultdict(set)
 
     def folder_of(self, uri: str) -> str | None:
-        return next((f for f in self.workspace.folders if uri.startswith(f)), None)
+        path = to_fs_path(uri)
+        if path is None:
+            return None
+
+        return next(
+            (
+                folder
+                for folder in self.workspace.folders
+                if (root := to_fs_path(folder)) and Path(path).is_relative_to(root)
+            ),
+            None,
+        )
 
     def files(self, folder_uri: str) -> list[Path]:
         root = to_fs_path(folder_uri)
@@ -131,13 +142,20 @@ class OpticsLanguageServer(LanguageServer):
     def snapshot(self, files: list[Path]) -> list[tuple[str, str, int | None]]:
         """As `sources`, plus each text's document version — captured together, or a client
         cannot tell a stale publish from a fresh one."""
+        # Keyed by path, not by uri: pygls decodes the uri a client sent, so `as_uri()`
+        # never matches an open buffer whose path holds a space.
+        open_documents = {
+            to_fs_path(uri): document
+            for uri, document in self.workspace.text_documents.items()
+        }
+
         snapshot = []
         for path in files:
             if path.suffix.lower() not in SUITE:
                 continue
 
             uri = path.as_uri()
-            document = self.workspace.text_documents.get(uri)
+            document = open_documents.get(str(path))
             if document is None:
                 snapshot.append((uri, path.read_text(errors="replace"), None))
             else:

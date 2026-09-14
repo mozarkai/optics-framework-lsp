@@ -22,7 +22,6 @@ IssueKind = Literal[
     "yaml-step-not-a-string",
     # Raised by `_unresolved` rather than by the parser: only the catalog can tell
     # `Sleep 5`, which never runs, from `Launch App`, which is a real paramless keyword.
-    "yaml-step-without-variable",
     "yaml-error-definitions-unread",
 ]
 
@@ -84,6 +83,10 @@ class Step:
     # re-scan, so the spans are recorded here as the file is read.
     name_span: Span | None = None
     param_spans: list[Span] = field(default_factory=list)
+    # The scalar as written, when the keyword catalog split params off it. A module is
+    # looked up by its whole raw name, so a module called `Sleep Well` has to be
+    # recognisable after the catalog has claimed `Sleep` and left `Well` a param.
+    raw: str | None = None
 
 
 @dataclass(slots=True)

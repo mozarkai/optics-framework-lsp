@@ -496,6 +496,7 @@ MIXED = {
         "  - Open It:\n"
         "      - Press Element ${btn}\n"
         "      - Sleep 5\n"
+        "      - Slep 5\n"
         "Elements:\n"
         "  btn: //a\n"
     ),
@@ -545,12 +546,13 @@ async def test_signature_help_triggers_on_a_space(mixed_client: LanguageClient):
 
 
 async def test_yaml_diagnostics_over_lsp(mixed_client: LanguageClient, mixed_workspace):
-    """`Sleep 5` has no `${...}`, so optics reads the whole line as the keyword name."""
+    """A yaml step's keyword is resolved from the catalog, so `Slep 5` misses on the name
+    alone while the `Sleep 5` beside it is clean."""
     uri = (mixed_workspace / "suite.yaml").as_uri()
-    (diagnostic,) = await codes_for(mixed_client, uri, ["yaml-step-without-variable"])
+    (diagnostic,) = await codes_for(mixed_client, uri, ["keyword-not-found"])
 
-    assert diagnostic.range.start.line == 3
-    assert "Sleep 5" in diagnostic.message
+    assert diagnostic.range.start.line == 4
+    assert "Slep" in diagnostic.message
     assert diagnostic.source == "optics"
 
 

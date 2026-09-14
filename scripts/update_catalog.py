@@ -34,6 +34,13 @@ CLASSES = {
     "verifier": "Verifier",
 }
 
+# Two keywords the `optics.py` facade exposes that no api class declares. `_parse_module_step`
+# hardcodes the same pair (`_FACADE_KEYWORD_SLUGS`), and has to: without them a step reading
+# `Press Element With Index ${el} 2` binds to the shorter `Press Element` and takes `With` and
+# `Index` as params. Mirrored exactly rather than taking every `@keyword` in the facade, since
+# a name the runner does not resolve would start swallowing modules that share it.
+FACADE = {"press_element_with_index", "quit"}
+
 OUT = Path(__file__).resolve().parent.parent / "src/optics_framework_lsp/keywords.py"
 
 _HEADER = '''# GENERATED — do not edit. Run `python scripts/update_catalog.py` to refresh.
@@ -121,20 +128,49 @@ def signatures(package: Path) -> dict[str, dict]:
             if any(ast.unparse(d) == "DeprecationWarning" for d in fn.decorator_list):
                 continue
 
-            args = fn.args
-            # Only params a csv row can fill: positional, never keyword-only.
-            names = [p.arg for p in args.posonlyargs + args.args if p.arg != "self"]
-            pad = len(names) - len(args.defaults)
-            found[fn.name.replace("_", " ").lower()] = {
-                "required": pad,
-                "variadic": args.vararg is not None,
-                "params": names,
-                "defaults": {names[pad + i]: ast.unparse(d) for i, d in enumerate(args.defaults)},
-                "doc": ast.get_docstring(fn) or "",
-            }
+            found[fn.name.replace("_", " ").lower()] = _signature(fn)
 
     if not found:
         raise SystemExit("no keywords found — has the api package moved?")
+
+    found.update(facade(package))
+    return found
+
+
+def _signature(fn) -> dict:
+    args = fn.args
+    # Only params a csv row can fill: positional, never keyword-only.
+    names = [p.arg for p in args.posonlyargs + args.args if p.arg != "self"]
+    pad = len(names) - len(args.defaults)
+    return {
+        "required": pad,
+        "variadic": args.vararg is not None,
+        "params": names,
+        "defaults": {names[pad + i]: ast.unparse(d) for i, d in enumerate(args.defaults)},
+        "doc": ast.get_docstring(fn) or "",
+    }
+
+
+def facade(package: Path) -> dict[str, dict]:
+    """The `FACADE` keywords, read from the methods `optics.py` decorates with `@keyword`."""
+    source = package / "optics.py"
+    if not source.is_file():
+        raise SystemExit(f"missing {source}")
+
+    found = {}
+    for fn in ast.walk(ast.parse(source.read_text())):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not any(
+            isinstance(d, ast.Call) and getattr(d.func, "id", "") == "keyword"
+            for d in fn.decorator_list
+        ):
+            continue
+        if fn.name.lower() in FACADE:
+            found[fn.name.replace("_", " ").lower()] = _signature(fn)
+
+    if missing := FACADE - {name.replace(" ", "_") for name in found}:
+        raise SystemExit(f"{source}: no @keyword method named {sorted(missing)}")
     return found
 
 

@@ -58,19 +58,83 @@ def test_a_name_repeated_is_one_block():
     assert [s.row for s in ast.modules[0].steps] == [3, 5]
 
 
-# `_parse_module_step` splits at the first `${...}`; everything before it is the keyword
-# and everything after is `.split()` on whitespace.
+# `_parse_module_step` ends the keyword name at the longest run of leading words the
+# catalog names, and takes the rest as `.split()` params. A `${...}` is the fallback, for
+# a name the catalog does not know.
 def test_a_step_splits_at_its_first_variable():
     ast = _parse("Modules:\n  - M:\n      - Enter Text ${f} hello\n")
     step = ast.modules[0].steps[0]
     assert (step.step_name, step.params) == ("Enter Text", ["${f}", "hello"])
 
 
-def test_a_step_with_no_variable_has_no_params():
-    """The whole string becomes the keyword, which is why `Sleep 5` never runs."""
+def test_a_step_whose_first_param_is_a_literal_still_splits():
+    """The catalog ends the name, so `Sleep 5` is the keyword `Sleep` with one param —
+    it used to be read as a keyword named `sleep 5`, which nothing answers to."""
     ast = _parse("Modules:\n  - M:\n      - Sleep 5\n")
     step = ast.modules[0].steps[0]
-    assert (step.step_name, step.params) == ("Sleep 5", [])
+    assert (step.step_name, step.params) == ("Sleep", ["5"])
+
+
+def test_the_longest_catalog_match_wins():
+    """Or `Swipe By Percentage 50 50 20` would be read as `Swipe`."""
+    ast = _parse("Modules:\n  - M:\n      - Swipe By Percentage 50 50 20\n")
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("Swipe By Percentage", ["50", "50", "20"])
+
+
+def test_slug_form_is_a_keyword_too():
+    ast = _parse("Modules:\n  - M:\n      - press_element ${btn}\n")
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("press_element", ["${btn}"])
+
+
+def test_a_name_the_catalog_does_not_know_falls_back_to_the_variable():
+    """So a misspelt keyword still reports the name alone rather than the whole line."""
+    ast = _parse("Modules:\n  - M:\n      - Slep ${btn}\n")
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("Slep", ["${btn}"])
+
+
+def test_a_step_the_catalog_cannot_claim_at_all_stays_whole():
+    """Which is how a step naming another module reaches the runner."""
+    ast = _parse("Modules:\n  - M:\n      - Login Flow\n")
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("Login Flow", [])
+
+
+def test_a_module_name_wins_over_the_catalog():
+    """`_parse_module_step` checks the project's module names before the catalogue, so a
+    module called `Sleep Well` is that module and not `Sleep` with a param."""
+    ast = _parse("Modules:\n  - M:\n      - Sleep Well\n  - Sleep Well:\n      - Launch App\n")
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("Sleep Well", [])
+
+
+def test_a_module_name_from_another_file_wins_too():
+    """`_load_modules` gathers the names across every module file before parsing one."""
+    ast = parse_yaml_sources([
+        (URI, "Modules:\n  - M:\n      - Sleep Well\n"),
+        ("file:///w/other.yaml", "Modules:\n  - Sleep Well:\n      - Launch App\n"),
+    ])
+    assert [(s.step_name, s.params) for s in ast.modules[0].steps] == [("Sleep Well", [])]
+
+
+def test_a_module_name_is_matched_by_its_slug():
+    """`_matched_module_name` falls back to the slug, so a step may name the module in
+    another case. The step keeps the text as written — the spans point at the source."""
+    ast = _parse("Modules:\n  - M:\n      - sleep well\n  - Sleep Well:\n      - Launch App\n")
+    step = ast.modules[0].steps[0]
+    assert (step.step_name, step.params) == ("sleep well", [])
+
+
+def test_a_mis_cased_modules_key_defines_no_names():
+    """`read_module_names` does `data.get("Modules")`, so the section reads as nothing —
+    the same gap that already makes its blocks unreadable."""
+    ast = parse_yaml_sources([
+        (URI, "Modules:\n  - M:\n      - Sleep Well\n"),
+        ("file:///w/other.yaml", "modules:\n  - Sleep Well:\n      - Launch App\n"),
+    ])
+    assert [(s.step_name, s.params) for s in ast.modules[0].steps] == [("Sleep", ["Well"])]
 
 
 def test_a_step_that_is_only_a_variable_is_dropped():

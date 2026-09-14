@@ -16,6 +16,7 @@ from typing import TypeGuard
 
 import yaml
 
+from ..keyword_catalog import CATALOG, slug
 from .ast import AST, Block, Element, IssueKind, Locator, SourceIssue, Span, Step
 
 # The keys the reader looks up, spelt exactly as it spells them. Public: `validation`
@@ -136,10 +137,40 @@ def _test_step(node: yaml.Node, uri: str, issues: list[SourceIssue]) -> Step | N
     return Step(step_name=text, row=_row(node), name_span=at(0, len(text)))
 
 
-def _module_step(node: yaml.Node, uri: str, issues: list[SourceIssue]) -> Step | None:
-    """A module step, split as `_parse_module_step` splits it: at the first `${...}`,
-    with everything before it the keyword and everything after it whitespace-separated
-    params."""
+def _split(
+    text: str, words: list[re.Match], modules: frozenset[str]
+) -> tuple[int, int] | None:
+    """Where the keyword name ends, as `_parse_module_step` decides it: the longest run of
+    leading words the catalog names, else the first `${...}`. Returned as (end of the
+    keyword, start of the params) — the two differ when a `${...}` is preceded by spaces.
+
+    A name the project defines as a module is that module and nothing is split off it, or
+    a module called `Sleep Well` would be read as `Sleep` with a param. Matched on the
+    slug, which is how the reader matches it: `sleep well` names `Sleep Well` too.
+
+    The catalog answers next because a keyword whose first param is a plain value has no
+    `${...}` to split on; `Sleep 5` used to be read as one keyword named `sleep 5`."""
+    if slug(text) in modules:
+        return None
+
+    for count in range(len(words), 0, -1):
+        name = text[words[0].start() : words[count - 1].end()]
+        if CATALOG.get(slug(name)) is not None:
+            after = words[count].start() if count < len(words) else len(text)
+            return words[count - 1].end(), after
+
+    found = _VAR.search(text)
+    return (found.start(), found.start()) if found else None
+
+
+def _module_step(
+    node: yaml.Node,
+    uri: str,
+    issues: list[SourceIssue],
+    modules: frozenset[str] = frozenset(),
+) -> Step | None:
+    """A module step, split as `_parse_module_step` splits it: a keyword name and its
+    whitespace-separated params."""
     if not _string(node, uri, issues):
         return None
 
@@ -148,16 +179,16 @@ def _module_step(node: yaml.Node, uri: str, issues: list[SourceIssue]) -> Step |
     if not text:
         return None
 
-    found = _VAR.search(text)
-    if found is None:
-        # With no `${...}` the reader takes the whole string as the keyword, params and
-        # all. `Launch App` is a real keyword and works; `Sleep 5` becomes `sleep_5`
-        # and does not. Only the catalog can tell those apart, so saying so is left to
-        # `_unknown_steps`.
+    words = list(re.finditer(r"\S+", text))
+    split = _split(text, words, modules)
+    if split is None:
+        # Neither the catalog nor a `${...}` claims any of it, so the reader takes the
+        # whole string as the keyword — which is how a step naming another module
+        # reaches the runner. `_unknown_steps` says so when nothing answers to it.
         return Step(step_name=text, row=row, name_span=at(0, len(text)))
 
-    start = found.start()
-    keyword = text[:start].strip()
+    end, start = split
+    keyword = text[:end].strip()
     if not keyword:
         # `_process_module_steps` drops a step whose keyword came out empty.
         return None
@@ -177,6 +208,7 @@ def _module_step(node: yaml.Node, uri: str, issues: list[SourceIssue]) -> Step |
             for m in params
             if (span := at(start + m.start(), start + m.end())) is not None
         ],
+        raw=text,
     )
 
 
@@ -265,9 +297,9 @@ def _problem(error: yaml.YAMLError) -> tuple[int, str]:
     return (mark.line + 1 if mark else 1), problem
 
 
-def _parse(ast: AST, uri: str, content: str) -> None:
+def _compose(ast: AST, uri: str, content: str) -> yaml.Node | None:
     try:
-        root = yaml.compose(content)
+        return yaml.compose(content)
     except yaml.YAMLError as error:
         # `read_file` logs this and returns `{}`, so every section loads empty and the
         # run fails later on something unrelated — usually "no test cases to run".
@@ -275,8 +307,29 @@ def _parse(ast: AST, uri: str, content: str) -> None:
         ast.issues.append(
             SourceIssue(uri=uri, row=row, kind="yaml-parse-error", detail=problem)
         )
-        return
+        return None
 
+
+def _module_names(root: yaml.Node | None) -> Iterable[str]:
+    """Every module a file defines, from the keys alone. `_load_modules` gathers these
+    across the project before a single step is parsed, so a step naming one is read as
+    that module rather than as the keyword its leading words happen to spell."""
+    if root is None:
+        return
+    for key, value in _pairs(root):
+        # `read_module_names` does `data.get("Modules")`, so a mis-cased key holds no
+        # names — the same gap that makes its section read as nothing.
+        if _text(key) != SECTIONS["modules"] or not isinstance(
+            value, yaml.SequenceNode
+        ):
+            continue
+        for item in value.value:
+            for name, _ in _pairs(item):
+                if text := _text(name):
+                    yield text
+
+
+def _parse(ast: AST, uri: str, root: yaml.Node, modules: frozenset[str]) -> None:
     if not isinstance(root, yaml.MappingNode):
         return
 
@@ -308,7 +361,13 @@ def _parse(ast: AST, uri: str, content: str) -> None:
         if kind == "test_cases":
             ast.test_cases += _blocks("Test Cases", value, uri, ast.issues, _test_step)
         elif kind == "modules":
-            ast.modules += _blocks("Modules", value, uri, ast.issues, _module_step)
+            ast.modules += _blocks(
+                "Modules",
+                value,
+                uri,
+                ast.issues,
+                lambda node, at, issues: _module_step(node, at, issues, modules),
+            )
         elif kind == "elements":
             ast.elements += _elements(value, uri, ast.issues)
 
@@ -321,6 +380,13 @@ def _parse(ast: AST, uri: str, content: str) -> None:
 
 def parse_yaml_sources(files: Iterable[tuple[str, str]]) -> AST:
     ast = AST()
-    for uri, content in files:
-        _parse(ast, uri, content)
+    # Composed first and read second, because a step splits against the module names of
+    # every file, not just its own — and composing twice would double the parse errors.
+    composed = [(uri, _compose(ast, uri, content)) for uri, content in files]
+    modules = frozenset(
+        slug(name) for _, root in composed for name in _module_names(root)
+    )
+    for uri, root in composed:
+        if root is not None:
+            _parse(ast, uri, root, modules)
     return ast

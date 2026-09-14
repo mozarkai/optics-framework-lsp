@@ -231,6 +231,13 @@ KEYWORDS: dict[str, dict] = {
         'defaults': {'repeat': "'1'", 'offset_x': "'0'", 'offset_y': "'0'", 'index': "'0'", 'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None'},
         'doc': 'Press a specified element.\n\n:param element: The element to be pressed (text, xpath or image).\n:param repeat: Number of times to repeat the press.\n:param offset_x: X offset of the press.\n:param offset_y: Y offset of the press.\n:param index: Index of the element if multiple matches are found.\n:param event_name: The event triggering the press.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.',
     },
+    'press element with index': {
+        'required': 1,
+        'variadic': False,
+        'params': ['element', 'index', 'event_name'],
+        'defaults': {'index': "'0'", 'event_name': 'None'},
+        'doc': 'Press an element at a specific index.',
+    },
     'press keycode': {
         'required': 1,
         'variadic': False,
@@ -244,6 +251,13 @@ KEYWORDS: dict[str, dict] = {
         'params': ['element', 'aoi_x', 'aoi_y', 'aoi_width', 'aoi_height', 'event_name', 'index'],
         'defaults': {'aoi_x': "'0'", 'aoi_y': "'0'", 'aoi_width': "'100'", 'aoi_height': "'100'", 'event_name': 'None', 'index': "'0'"},
         'doc': 'Press a specified radio button.\n\n.. deprecated:: Deprecated alias of :meth:`press_element` — use ``Press Element`` directly.\n\n:param element: The radio button element (Image template, OCR template, or XPath).\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:param event_name: The event triggering the press.\n:param index: Index of the element if multiple matches are found.',
+    },
+    'quit': {
+        'required': 0,
+        'variadic': False,
+        'params': [],
+        'defaults': {},
+        'doc': 'Clean up session resources and terminate the session.',
     },
     'read data': {
         'required': 2,

@@ -6,6 +6,7 @@ validates a whole suite in one shot and reports every finding:
     optics-lsp lint PATH        # walk a project directory; readable output
     optics-lsp lint             # read {"files":[{"name","content"}]} as JSON on stdin
     optics-lsp lint PATH --json # the machine-readable report either way
+    optics-lsp parse PATH       # what the files say, rather than what is wrong with them
 
 stdin is for a caller holding uploaded files in memory with nothing on disk, which is why it
 always answers JSON. A path is for a person, so it prints lines.
@@ -22,10 +23,10 @@ import sys
 from pathlib import Path
 
 
-def _lint(path: str | None, as_json: bool) -> int:
+def _batch(command: str, path: str | None, as_json: bool) -> int:
     """Exit 0 whenever the suite was validated — findings are data, not process failure — and
     1 if the input could not be read at all."""
-    from .lint import as_text, report, walk
+    from .lint import as_text, parse, report, walk
 
     if path is None:
         try:
@@ -33,7 +34,7 @@ def _lint(path: str | None, as_json: bool) -> int:
             files = [(entry["name"], entry["content"]) for entry in body["files"]]
         except (json.JSONDecodeError, KeyError, TypeError, UnicodeDecodeError) as error:
             print(
-                'optics-lsp lint: expected {"files": [{"name": ..., "content": ...}]} on stdin '
+                f'optics-lsp {command}: expected {{"files": [{{"name": ..., "content": ...}}]}} on stdin '
                 f"({type(error).__name__}: {error})",
                 file=sys.stderr,
             )
@@ -42,9 +43,15 @@ def _lint(path: str | None, as_json: bool) -> int:
     else:
         root = Path(path).expanduser()
         if not root.is_dir():
-            print(f"optics-lsp lint: not a directory: {root}", file=sys.stderr)
+            print(f"optics-lsp {command}: not a directory: {root}", file=sys.stderr)
             return 1
         files = walk(root)
+
+    # `parse` answers a structure, which has no line format to print.
+    if command == "parse":
+        json.dump(parse(files), sys.stdout)
+        sys.stdout.write("\n")
+        return 0
 
     found = report(files)
     if as_json:
@@ -60,8 +67,8 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["lint"],
-        help="validate a suite instead of serving over stdio",
+        choices=["lint", "parse"],
+        help="validate a suite, or read one, instead of serving over stdio",
     )
     parser.add_argument(
         "path", nargs="?", help="project directory to walk; omitted, the suite is read on stdin"
@@ -71,8 +78,8 @@ def main() -> None:
     # refusing them would break a client for no gain.
     args, _ = parser.parse_known_args()
 
-    if args.command == "lint":
-        raise SystemExit(_lint(args.path, args.json))
+    if args.command:
+        raise SystemExit(_batch(args.command, args.path, args.json))
 
     from .server import server
 

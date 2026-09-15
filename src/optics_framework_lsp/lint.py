@@ -56,6 +56,9 @@ def _suite_of(ast: AST) -> dict:
         # declaring them. Listed as well as included above because `${name}` reads them
         # identically, while a caller storing the suite has nothing to store for them.
         "runtime": sorted(name for name, locators in elements.items() if not locators),
+        # Enough to send the requests, not just to know what they bind — and shaped as
+        # `read_api_data` reads it, so a caller can write the file back out.
+        "apiCollections": ast.api_collections,
     }
 
 

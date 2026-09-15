@@ -17,7 +17,7 @@ from typing import TypeGuard
 import yaml
 
 from ..keyword_catalog import CATALOG, slug
-from .ast import AST, Block, Element, IssueKind, Locator, SourceIssue, Span, Step
+from .ast import AST, Block, Element, IssueKind, Locator, SourceIssue, Span, Step, merge_api_collection
 
 # The keys the reader looks up, spelt exactly as it spells them. Public: `validation`
 # needs them to say which key a misspelt one should have been. `read_test_cases` does
@@ -281,6 +281,21 @@ def _module_step(
     )
 
 
+# Every other section needs the line numbers composing keeps; an api definition needs the
+# values. Reads a composed node as `safe_load` would, so `expected_status: 200` stays an int.
+_CONSTRUCTOR = yaml.constructor.SafeConstructor()
+
+
+def _api_collections(node: yaml.Node, into: dict[str, dict]) -> None:
+    """Every collection an `api` section defines, merged into `into` by name."""
+    data = _CONSTRUCTOR.construct_object(node, deep=True)
+    if not isinstance(data, dict):
+        return
+    for name, collection in (data.get("collections") or {}).items():
+        if isinstance(collection, dict):
+            merge_api_collection(into, str(name), collection)
+
+
 def _api_elements(node: yaml.Node, uri: str) -> Iterable[Element]:
     """Every name an api's `extract` binds. `_extract_values_from_response` adds each key to
     the store `read_elements` fills, so `${name}` reads one like any other — the value just
@@ -454,6 +469,7 @@ def _parse(ast: AST, uri: str, root: yaml.Node, modules: frozenset[str]) -> None
             ast.elements += _elements(value, uri, ast.issues)
         elif kind == "api":
             ast.elements += _api_elements(value, uri)
+            _api_collections(value, ast.api_collections)
 
     if _config({_text(key) for key, _ in pairs}):
         kinds.append("config")

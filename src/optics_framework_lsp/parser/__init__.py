@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .ast import AST
+from .ast import AST, merge_api_collection
 from .csv_parser import parse_csv_sources
 from .yaml_parser import parse_yaml_sources
 
@@ -26,6 +26,8 @@ def _merge(into: AST, other: AST) -> None:
     into.modules += other.modules
     into.elements += other.elements
     into.error_definitions += other.error_definitions
+    for name, collection in other.api_collections.items():
+        merge_api_collection(into.api_collections, name, collection)
     into.issues += other.issues
 
 

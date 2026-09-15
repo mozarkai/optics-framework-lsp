@@ -1,11 +1,11 @@
-"""The batch report: one suite in, every finding out."""
+"""The batch commands: `lint` for every finding, `parse` for what the files say."""
 
 import json
 import subprocess
 import sys
 
 from optics_framework_lsp.keyword_catalog import CATALOG
-from optics_framework_lsp.lint import report
+from optics_framework_lsp.lint import parse, report
 from optics_framework_lsp.parser.csv_parser import parse_csv_sources
 from optics_framework_lsp.validation import validate
 
@@ -141,6 +141,75 @@ def test_the_cli_reports_over_stdin():
     body = json.loads(done.stdout)
     assert body["status"] == "FAIL"
     assert body["analyzed"] == {"m.csv": "modules"}
+
+
+SUITE = (
+    "Test Cases:\n"
+    "  - Login:\n"
+    "      - Open App\n"
+    "Modules:\n"
+    "  - Open App:\n"
+    "      - Sleep 5\n"
+    '      - Press Element ${btn} text="two words"\n'
+    "Elements:\n"
+    "  btn:\n"
+    "    - //a\n"
+    "    - Sign in\n"
+)
+
+
+def test_lint_answers_findings_and_parse_answers_the_suite():
+    """Two questions, two commands: neither carries the other's answer."""
+    assert "suite" not in report([("s.yaml", SUITE)])
+    assert "diagnostics" not in parse([("s.yaml", SUITE)])
+
+
+def test_the_suite_carries_what_a_caller_has_to_store():
+    """Split as the runner splits it: `Sleep 5` is a keyword and a param, and a quoted
+    value is one param without its quotes."""
+    found = parse([("s.yaml", SUITE)])["suite"]
+    assert found["testCases"] == {"Login": ["Open App"]}
+    assert found["modules"] == {
+        "Open App": [
+            {"keyword": "Sleep", "params": ["5"]},
+            {"keyword": "Press Element", "params": ["${btn}", "text=two words"]},
+        ]
+    }
+    assert found["elements"] == {"btn": ["//a", "Sign in"]}
+
+
+def test_a_suite_reads_the_same_whichever_format_it_is_written_as():
+    """One ast behind both readers, which is the whole reason a caller can ask for this."""
+    csv = [
+        ("test_cases.csv", "test_case,test_step\nLogin,Open App\n"),
+        ("modules.csv", "module_name,module_step,param_1,param_2\n"
+                        "Open App,Sleep,5,\n"
+                        "Open App,Press Element,${btn},text=two words\n"),
+        ("elements.csv", "Element_Name,Element_ID,Element_ID_fallback1\nbtn,//a,Sign in\n"),
+    ]
+    assert parse(csv)["suite"] == parse([("s.yaml", SUITE)])["suite"]
+
+
+def test_an_element_repeated_gathers_its_locators():
+    """`resolve_with_fallback` tries one list in turn, however many rows wrote it."""
+    csv = "Element_Name,Element_ID\nbtn,//a\nbtn,Sign in\n"
+    assert parse([("e.csv", csv)])["suite"]["elements"] == {"btn": ["//a", "Sign in"]}
+
+
+def test_parse_says_what_it_read_as_well_as_what_it_says():
+    """`analyzed` and `skipped` tell an empty suite from an upload that held none."""
+    found = parse([("s.yaml", SUITE), ("data.csv", "name,plan\nada,basic\n")])
+    assert found["analyzed"] == {"s.yaml": "test_cases,modules,elements"}
+    assert found["skipped"] == ["data.csv"]
+
+
+def test_the_cli_parses_over_stdin_and_from_a_path(tmp_path):
+    payload = json.dumps({"files": [{"name": "s.yaml", "content": SUITE}]})
+    (tmp_path / "s.yaml").write_text(SUITE)
+
+    for done in (_run("parse", stdin=payload), _run("parse", str(tmp_path))):
+        assert done.returncode == 0, done.stderr
+        assert json.loads(done.stdout)["suite"]["testCases"] == {"Login": ["Open App"]}
 
 
 def test_the_cli_rejects_input_it_cannot_read():

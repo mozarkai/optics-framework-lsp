@@ -12,10 +12,47 @@ from collections import Counter
 from pathlib import Path
 
 from .keyword_catalog import CATALOG, Catalog
+from .parser.ast import AST
 from .parser import SUITE, parse_sources
 from .validation import ERROR, SOURCE, WARNING, validate
 
 _SEVERITY = {ERROR: "error", WARNING: "warning"}
+
+
+def parse(files: list[tuple[str, str]]) -> dict:
+    """What one suite says, for a caller that has to store it rather than judge it.
+
+    The other half of `report`: same files, same readers, different question. `analyzed` and
+    `skipped` say which of them were read, so a caller can tell an empty suite from an
+    upload that held no suite at all.
+    """
+    ast = parse_sources(files)
+    return {
+        "analyzed": ast.kinds,
+        "skipped": sorted(name for name, _ in files if name not in ast.kinds),
+        "suite": _suite_of(ast),
+    }
+
+
+def _suite_of(ast: AST) -> dict:
+    """The suite itself, split as the runner splits it.
+
+    Named exactly once each, because that is what the runner runs: a block redefined in a
+    later file replaces the earlier one (`add_module_definition` assigns), while an element
+    repeated gathers its locators into the one list `resolve_with_fallback` tries in turn.
+    """
+    elements: dict[str, list[str]] = {}
+    for element in ast.elements:
+        elements.setdefault(element.name, []).extend(l.text for l in element.locators)
+
+    return {
+        "testCases": {b.name: [s.step_name for s in b.steps] for b in ast.test_cases},
+        "modules": {
+            b.name: [{"keyword": s.step_name, "params": s.params} for s in b.steps]
+            for b in ast.modules
+        },
+        "elements": elements,
+    }
 
 
 def report(files: list[tuple[str, str]], catalog: Catalog | None = CATALOG) -> dict:

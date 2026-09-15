@@ -278,3 +278,81 @@ def test_the_text_report_summarises_skipped_files():
 
     text = as_text(report([("m.csv", CLEAN), ("users.csv", "name,age\nbob,3\n")]))
     assert text == "PASS  1 files analysed, 0 errors, 0 warnings  (1 skipped: users.csv)"
+
+
+API = (
+    "api:\n"
+    "  collections:\n"
+    "    alpha:\n"
+    "      name: Alpha\n"
+    "      base_url: https://alpha.example.test\n"
+    "      global_headers:\n"
+    "        content-type: application/json\n"
+    "      apis:\n"
+    "        first:\n"
+    "          name: First\n"
+    "          endpoint: /first\n"
+    "          request:\n"
+    "            method: POST\n"
+    "            body:\n"
+    "              who: ${who}\n"
+    "          expected_result:\n"
+    "            expected_status: 200\n"
+    "            extract:\n"
+    "              token: data.token\n"
+)
+
+
+def test_the_suite_carries_the_api_definitions_not_just_their_names():
+    """A caller has to send these requests, so knowing which names an `extract` binds is not
+    enough — it needs the url, the method, the headers and the body too."""
+    collections = parse([("api.yaml", API)])["suite"]["apiCollections"]
+    assert list(collections) == ["alpha"]
+    alpha = collections["alpha"]
+    assert alpha["base_url"] == "https://alpha.example.test"
+    assert alpha["global_headers"] == {"content-type": "application/json"}
+    first = alpha["apis"]["first"]
+    assert first["endpoint"] == "/first"
+    assert first["request"]["method"] == "POST"
+    assert first["request"]["body"] == {"who": "${who}"}
+    assert first["expected_result"]["extract"] == {"token": "data.token"}
+
+
+def test_a_number_stays_a_number():
+    """`read_api_data` builds `ExpectedResultDefinition` from this mapping, and its
+    `expected_status` is an int — a string would fail validation on load."""
+    status = parse([("api.yaml", API)])["suite"]["apiCollections"]["alpha"]["apis"]["first"][
+        "expected_result"
+    ]["expected_status"]
+    assert status == 200 and isinstance(status, int)
+
+
+def test_a_second_file_adds_to_a_collection_the_first_declared():
+    """`_merge_collections` keeps the existing collection and merges into it, so two files
+    may each contribute an api to one name."""
+    more = (
+        "api:\n"
+        "  collections:\n"
+        "    alpha:\n"
+        "      apis:\n"
+        "        second:\n"
+        "          name: Second\n"
+        "          endpoint: /second\n"
+        "          request:\n"
+        "            method: GET\n"
+    )
+    alpha = parse([("api.yaml", API), ("more.yaml", more)])["suite"]["apiCollections"]["alpha"]
+    assert sorted(alpha["apis"]) == ["first", "second"]
+    # The first file's collection-level settings survive the merge.
+    assert alpha["base_url"] == "https://alpha.example.test"
+
+
+def test_a_suite_with_no_api_file_carries_no_collections():
+    assert parse([("s.yaml", SUITE)])["suite"]["apiCollections"] == {}
+
+
+def test_the_names_an_extract_binds_are_still_listed_as_runtime():
+    """Both halves come from the same file: the definitions to send, and the names that
+    resolve only once one has been sent."""
+    found = parse([("s.yaml", SUITE), ("api.yaml", API)])["suite"]
+    assert found["runtime"] == ["token"]

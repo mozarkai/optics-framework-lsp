@@ -52,6 +52,10 @@ def _suite_of(ast: AST) -> dict:
             for b in ast.modules
         },
         "elements": elements,
+        # The names an api's `extract` binds while the suite runs, rather than a file
+        # declaring them. Listed as well as included above because `${name}` reads them
+        # identically, while a caller storing the suite has nothing to store for them.
+        "runtime": sorted(name for name, locators in elements.items() if not locators),
     }
 
 

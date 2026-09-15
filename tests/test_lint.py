@@ -178,6 +178,23 @@ def test_the_suite_carries_what_a_caller_has_to_store():
     assert found["elements"] == {"btn": ["//a", "Sign in"]}
 
 
+def test_a_name_an_api_binds_is_listed_as_runtime():
+    """A caller storing the suite has nothing to store for these: no file declares them, the
+    run does. They stay in `elements` too, because `${name}` reads them like any other."""
+    api = (
+        "api:\n  collections:\n    alpha:\n      apis:\n        first:\n"
+        "          expected_result:\n            extract:\n              code: field_a\n"
+    )
+    found = parse([("s.yaml", SUITE), ("api.yaml", api)])["suite"]
+    assert found["runtime"] == ["code"]
+    assert found["elements"]["code"] == []
+    assert found["elements"]["btn"] == ["//a", "Sign in"]
+
+
+def test_a_suite_with_no_api_has_nothing_at_runtime():
+    assert parse([("s.yaml", SUITE)])["suite"]["runtime"] == []
+
+
 def test_a_suite_reads_the_same_whichever_format_it_is_written_as():
     """One ast behind both readers, which is the whole reason a caller can ask for this."""
     csv = [

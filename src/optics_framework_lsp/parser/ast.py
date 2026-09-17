@@ -70,6 +70,10 @@ class ErrorDefinition:
     match: str
     uri: str
     row: int
+    # Carried but never matched on: `detect_errors_in_text` copies them into what it
+    # reports, so a failing run names its code in words.
+    description: str = ""
+    severity: str = ""
 
 
 @dataclass(slots=True)

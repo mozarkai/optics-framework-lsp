@@ -59,6 +59,17 @@ def _suite_of(ast: AST) -> dict:
         # Enough to send the requests, not just to know what they bind — and shaped as
         # `read_api_data` reads it, so a caller can write the file back out.
         "apiCollections": ast.api_collections,
+        # Keyed by code as `_load_error_definitions` keys it, so a code written twice is the
+        # later row. An incomplete row is dropped, as `read_error_definitions` drops it.
+        "errorDefinitions": {
+            error.code: {
+                "match": error.match,
+                "description": error.description,
+                "severity": error.severity,
+            }
+            for error in ast.error_definitions
+            if error.code and error.match
+        },
     }
 
 

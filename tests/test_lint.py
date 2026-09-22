@@ -1,11 +1,11 @@
-"""The batch report: one suite in, every finding out."""
+"""The batch commands: `lint` for every finding, `parse` for what the files say."""
 
 import json
 import subprocess
 import sys
 
 from optics_framework_lsp.keyword_catalog import CATALOG
-from optics_framework_lsp.lint import report
+from optics_framework_lsp.lint import parse, report
 from optics_framework_lsp.parser.csv_parser import parse_csv_sources
 from optics_framework_lsp.validation import validate
 
@@ -143,6 +143,92 @@ def test_the_cli_reports_over_stdin():
     assert body["analyzed"] == {"m.csv": "modules"}
 
 
+SUITE = (
+    "Test Cases:\n"
+    "  - Login:\n"
+    "      - Open App\n"
+    "Modules:\n"
+    "  - Open App:\n"
+    "      - Sleep 5\n"
+    '      - Press Element ${btn} text="two words"\n'
+    "Elements:\n"
+    "  btn:\n"
+    "    - //a\n"
+    "    - Sign in\n"
+)
+
+
+def test_lint_answers_findings_and_parse_answers_the_suite():
+    """Two questions, two commands: neither carries the other's answer."""
+    assert "suite" not in report([("s.yaml", SUITE)])
+    assert "diagnostics" not in parse([("s.yaml", SUITE)])
+
+
+def test_the_suite_carries_what_a_caller_has_to_store():
+    """Split as the runner splits it: `Sleep 5` is a keyword and a param, and a quoted
+    value is one param without its quotes."""
+    found = parse([("s.yaml", SUITE)])["suite"]
+    assert found["testCases"] == {"Login": ["Open App"]}
+    assert found["modules"] == {
+        "Open App": [
+            {"keyword": "Sleep", "params": ["5"]},
+            {"keyword": "Press Element", "params": ["${btn}", "text=two words"]},
+        ]
+    }
+    assert found["elements"] == {"btn": ["//a", "Sign in"]}
+
+
+def test_a_name_an_api_binds_is_listed_as_runtime():
+    """A caller storing the suite has nothing to store for these: no file declares them, the
+    run does. They stay in `elements` too, because `${name}` reads them like any other."""
+    api = (
+        "api:\n  collections:\n    alpha:\n      apis:\n        first:\n"
+        "          expected_result:\n            extract:\n              code: field_a\n"
+    )
+    found = parse([("s.yaml", SUITE), ("api.yaml", api)])["suite"]
+    assert found["runtime"] == ["code"]
+    assert found["elements"]["code"] == []
+    assert found["elements"]["btn"] == ["//a", "Sign in"]
+
+
+def test_a_suite_with_no_api_has_nothing_at_runtime():
+    assert parse([("s.yaml", SUITE)])["suite"]["runtime"] == []
+
+
+def test_a_suite_reads_the_same_whichever_format_it_is_written_as():
+    """One ast behind both readers, which is the whole reason a caller can ask for this."""
+    csv = [
+        ("test_cases.csv", "test_case,test_step\nLogin,Open App\n"),
+        ("modules.csv", "module_name,module_step,param_1,param_2\n"
+                        "Open App,Sleep,5,\n"
+                        "Open App,Press Element,${btn},text=two words\n"),
+        ("elements.csv", "Element_Name,Element_ID,Element_ID_fallback1\nbtn,//a,Sign in\n"),
+    ]
+    assert parse(csv)["suite"] == parse([("s.yaml", SUITE)])["suite"]
+
+
+def test_an_element_repeated_gathers_its_locators():
+    """`resolve_with_fallback` tries one list in turn, however many rows wrote it."""
+    csv = "Element_Name,Element_ID\nbtn,//a\nbtn,Sign in\n"
+    assert parse([("e.csv", csv)])["suite"]["elements"] == {"btn": ["//a", "Sign in"]}
+
+
+def test_parse_says_what_it_read_as_well_as_what_it_says():
+    """`analyzed` and `skipped` tell an empty suite from an upload that held none."""
+    found = parse([("s.yaml", SUITE), ("data.csv", "name,plan\nada,basic\n")])
+    assert found["analyzed"] == {"s.yaml": "test_cases,modules,elements"}
+    assert found["skipped"] == ["data.csv"]
+
+
+def test_the_cli_parses_over_stdin_and_from_a_path(tmp_path):
+    payload = json.dumps({"files": [{"name": "s.yaml", "content": SUITE}]})
+    (tmp_path / "s.yaml").write_text(SUITE)
+
+    for done in (_run("parse", stdin=payload), _run("parse", str(tmp_path))):
+        assert done.returncode == 0, done.stderr
+        assert json.loads(done.stdout)["suite"]["testCases"] == {"Login": ["Open App"]}
+
+
 def test_the_cli_rejects_input_it_cannot_read():
     for stdin in ("not json", "{}", '{"files": [{"name": "m.csv"}]}'):
         done = _run("lint", stdin=stdin)
@@ -192,3 +278,128 @@ def test_the_text_report_summarises_skipped_files():
 
     text = as_text(report([("m.csv", CLEAN), ("users.csv", "name,age\nbob,3\n")]))
     assert text == "PASS  1 files analysed, 0 errors, 0 warnings  (1 skipped: users.csv)"
+
+
+API = (
+    "api:\n"
+    "  collections:\n"
+    "    alpha:\n"
+    "      name: Alpha\n"
+    "      base_url: https://alpha.example.test\n"
+    "      global_headers:\n"
+    "        content-type: application/json\n"
+    "      apis:\n"
+    "        first:\n"
+    "          name: First\n"
+    "          endpoint: /first\n"
+    "          request:\n"
+    "            method: POST\n"
+    "            body:\n"
+    "              who: ${who}\n"
+    "          expected_result:\n"
+    "            expected_status: 200\n"
+    "            extract:\n"
+    "              token: data.token\n"
+)
+
+
+def test_the_suite_carries_the_api_definitions_not_just_their_names():
+    """A caller has to send these requests, so knowing which names an `extract` binds is not
+    enough — it needs the url, the method, the headers and the body too."""
+    collections = parse([("api.yaml", API)])["suite"]["apiCollections"]
+    assert list(collections) == ["alpha"]
+    alpha = collections["alpha"]
+    assert alpha["base_url"] == "https://alpha.example.test"
+    assert alpha["global_headers"] == {"content-type": "application/json"}
+    first = alpha["apis"]["first"]
+    assert first["endpoint"] == "/first"
+    assert first["request"]["method"] == "POST"
+    assert first["request"]["body"] == {"who": "${who}"}
+    assert first["expected_result"]["extract"] == {"token": "data.token"}
+
+
+def test_a_number_stays_a_number():
+    """`read_api_data` builds `ExpectedResultDefinition` from this mapping, and its
+    `expected_status` is an int — a string would fail validation on load."""
+    status = parse([("api.yaml", API)])["suite"]["apiCollections"]["alpha"]["apis"]["first"][
+        "expected_result"
+    ]["expected_status"]
+    assert status == 200 and isinstance(status, int)
+
+
+def test_a_second_file_adds_to_a_collection_the_first_declared():
+    """`_merge_collections` keeps the existing collection and merges into it, so two files
+    may each contribute an api to one name."""
+    more = (
+        "api:\n"
+        "  collections:\n"
+        "    alpha:\n"
+        "      apis:\n"
+        "        second:\n"
+        "          name: Second\n"
+        "          endpoint: /second\n"
+        "          request:\n"
+        "            method: GET\n"
+    )
+    alpha = parse([("api.yaml", API), ("more.yaml", more)])["suite"]["apiCollections"]["alpha"]
+    assert sorted(alpha["apis"]) == ["first", "second"]
+    # The first file's collection-level settings survive the merge.
+    assert alpha["base_url"] == "https://alpha.example.test"
+
+
+def test_a_suite_with_no_api_file_carries_no_collections():
+    assert parse([("s.yaml", SUITE)])["suite"]["apiCollections"] == {}
+
+
+def test_the_names_an_extract_binds_are_still_listed_as_runtime():
+    """Both halves come from the same file: the definitions to send, and the names that
+    resolve only once one has been sent."""
+    found = parse([("s.yaml", SUITE), ("api.yaml", API)])["suite"]
+    assert found["runtime"] == ["token"]
+
+
+ERRORS = (
+    "error_code,match_string,description,severity\n"
+    "E001,Something went wrong,The generic failure screen,high\n"
+)
+
+
+def test_the_suite_carries_the_text_a_run_looks_for_on_screen():
+    """`detect_errors_in_text` matches on `match_string`; the other two columns ride along
+    so the run can name the code in words."""
+    assert parse([("errors.csv", ERRORS)])["suite"]["errorDefinitions"] == {
+        "E001": {
+            "match": "Something went wrong",
+            "description": "The generic failure screen",
+            "severity": "high",
+        }
+    }
+
+
+def test_the_two_optional_columns_may_be_missing_altogether():
+    """`read_error_definitions` defaults both to `""`, so a two-column file is valid."""
+    csv = "error_code,match_string\nE001,Something went wrong\n"
+    found = parse([("errors.csv", csv)])["suite"]["errorDefinitions"]
+    assert found == {"E001": {"match": "Something went wrong", "description": "", "severity": ""}}
+
+
+def test_a_code_written_twice_is_the_later_row():
+    """`_load_error_definitions` merges every file into one dict keyed by code, so the
+    second definition replaces the first rather than joining it."""
+    later = "error_code,match_string\nE001,Frozen\n"
+    found = parse([("a.csv", ERRORS), ("b.csv", later)])["suite"]["errorDefinitions"]
+    assert found["E001"]["match"] == "Frozen"
+
+
+def test_a_row_missing_either_column_is_not_carried():
+    """It never matches anything, so there is nothing to store — and `lint` says so."""
+    csv = "error_code,match_string\nE001,\n,orphan\n"
+    assert parse([("errors.csv", csv)])["suite"]["errorDefinitions"] == {}
+    assert [d["code"] for d in report([("errors.csv", csv)])["diagnostics"]] == [
+        "error-definition-incomplete",
+        "error-definition-incomplete",
+    ]
+
+
+def test_a_suite_with_no_error_definitions_carries_none():
+    assert parse([("s.yaml", SUITE)])["suite"]["errorDefinitions"] == {}

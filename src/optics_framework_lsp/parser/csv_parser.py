@@ -60,6 +60,11 @@ def _cell(values: list[str], i: int) -> str | None:
     return (values[i] if i < len(values) else "") or None
 
 
+def _optional(values: list[str], headers: list[str], name: str) -> str:
+    """A column the header need not name: `read_error_definitions` defaults it to `""`."""
+    return (_cell(values, headers.index(name)) or "") if name in headers else ""
+
+
 def filled_params(values: list[str], headers: list[str]) -> list[int]:
     """The columns `read_modules` hands the keyword: `param_*`, non-blank, in header
     order. A `notes` or trailing unnamed column never reaches it, and a blank cell holds
@@ -184,7 +189,14 @@ def parse_csv_sources(files: Iterable[tuple[str, str]]) -> AST:
                 match = _cell(values, headers.index("match_string")) or ""
                 if code or match:
                     ast.error_definitions.append(
-                        ErrorDefinition(code=code, match=match, uri=uri, row=row)
+                        ErrorDefinition(
+                            code=code,
+                            match=match,
+                            uri=uri,
+                            row=row,
+                            description=_optional(values, headers, "description"),
+                            severity=_optional(values, headers, "severity"),
+                        )
                     )
 
     return ast

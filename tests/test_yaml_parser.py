@@ -378,6 +378,13 @@ def test_an_apis_extract_keys_are_elements():
     assert [(e.name, e.row) for e in ast.elements] == [("token", 10), ("code", 15)]
 
 
+def test_an_api_element_carries_no_locator():
+    """Load-bearing: two rules read it as "this name came from an api" — the duplicate-element
+    check skips them, and `parse` lists them as bound at run time. An elements row without a
+    locator is dropped, so nothing else in an ast lacks one."""
+    assert all(e.locators == [] for e in _parse(API).elements)
+
+
 def test_an_api_file_is_classified_but_holds_no_suite():
     ast = _parse("api:\n  collections: {}\n")
     assert kinds_of(ast, URI) == {"api"}

@@ -70,6 +70,10 @@ class ErrorDefinition:
     match: str
     uri: str
     row: int
+    # Carried but never matched on: `detect_errors_in_text` copies them into what it
+    # reports, so a failing run names its code in words.
+    description: str = ""
+    severity: str = ""
 
 
 @dataclass(slots=True)
@@ -112,7 +116,28 @@ class AST:
     modules: list[Block] = field(default_factory=list)
     elements: list[Element] = field(default_factory=list)
     error_definitions: list[ErrorDefinition] = field(default_factory=list)
+    # Plain data rather than nodes: a caller stores and re-emits these, so it needs the
+    # values, not their line numbers. Shaped as `read_api_data` reads them.
+    api_collections: dict[str, dict] = field(default_factory=dict)
     issues: list[SourceIssue] = field(default_factory=list)
+
+
+def merge_api_collection(into: dict[str, dict], name: str, collection: dict) -> None:
+    """Add one collection to `into`, as `_merge_collections` adds it to an `ApiData`: a
+    repeated collection is merged, so a second file may add an api to one an earlier file
+    declared. The reader also merges a repeated *api*, keeping the original and taking only
+    its newer `extract`; here the later one wins whole, as every other duplicate does.
+    """
+    existing = into.get(name, {})
+    into[name] = {
+        **existing,
+        **collection,
+        "apis": {**existing.get("apis", {}), **(collection.get("apis") or {})},
+        "global_headers": {
+            **existing.get("global_headers", {}),
+            **(collection.get("global_headers") or {}),
+        },
+    }
 
 
 def kinds_of(ast: AST, uri: str) -> set[str]:

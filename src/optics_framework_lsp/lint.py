@@ -12,10 +12,65 @@ from collections import Counter
 from pathlib import Path
 
 from .keyword_catalog import CATALOG, Catalog
+from .parser.ast import AST
 from .parser import SUITE, parse_sources
 from .validation import ERROR, SOURCE, WARNING, validate
 
 _SEVERITY = {ERROR: "error", WARNING: "warning"}
+
+
+def parse(files: list[tuple[str, str]]) -> dict:
+    """What one suite says, for a caller that has to store it rather than judge it.
+
+    The other half of `report`: same files, same readers, different question. `analyzed` and
+    `skipped` say which of them were read, so a caller can tell an empty suite from an
+    upload that held no suite at all.
+    """
+    ast = parse_sources(files)
+    return {
+        "analyzed": ast.kinds,
+        "skipped": sorted(name for name, _ in files if name not in ast.kinds),
+        "suite": _suite_of(ast),
+    }
+
+
+def _suite_of(ast: AST) -> dict:
+    """The suite itself, split as the runner splits it.
+
+    Named exactly once each, because that is what the runner runs: a block redefined in a
+    later file replaces the earlier one (`add_module_definition` assigns), while an element
+    repeated gathers its locators into the one list `resolve_with_fallback` tries in turn.
+    """
+    elements: dict[str, list[str]] = {}
+    for element in ast.elements:
+        elements.setdefault(element.name, []).extend(l.text for l in element.locators)
+
+    return {
+        "testCases": {b.name: [s.step_name for s in b.steps] for b in ast.test_cases},
+        "modules": {
+            b.name: [{"keyword": s.step_name, "params": s.params} for s in b.steps]
+            for b in ast.modules
+        },
+        "elements": elements,
+        # The names an api's `extract` binds while the suite runs, rather than a file
+        # declaring them. Listed as well as included above because `${name}` reads them
+        # identically, while a caller storing the suite has nothing to store for them.
+        "runtime": sorted(name for name, locators in elements.items() if not locators),
+        # Enough to send the requests, not just to know what they bind — and shaped as
+        # `read_api_data` reads it, so a caller can write the file back out.
+        "apiCollections": ast.api_collections,
+        # Keyed by code as `_load_error_definitions` keys it, so a code written twice is the
+        # later row. An incomplete row is dropped, as `read_error_definitions` drops it.
+        "errorDefinitions": {
+            error.code: {
+                "match": error.match,
+                "description": error.description,
+                "severity": error.severity,
+            }
+            for error in ast.error_definitions
+            if error.code and error.match
+        },
+    }
 
 
 def report(files: list[tuple[str, str]], catalog: Catalog | None = CATALOG) -> dict:

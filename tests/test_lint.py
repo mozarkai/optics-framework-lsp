@@ -356,3 +356,50 @@ def test_the_names_an_extract_binds_are_still_listed_as_runtime():
     resolve only once one has been sent."""
     found = parse([("s.yaml", SUITE), ("api.yaml", API)])["suite"]
     assert found["runtime"] == ["token"]
+
+
+ERRORS = (
+    "error_code,match_string,description,severity\n"
+    "E001,Something went wrong,The generic failure screen,high\n"
+)
+
+
+def test_the_suite_carries_the_text_a_run_looks_for_on_screen():
+    """`detect_errors_in_text` matches on `match_string`; the other two columns ride along
+    so the run can name the code in words."""
+    assert parse([("errors.csv", ERRORS)])["suite"]["errorDefinitions"] == {
+        "E001": {
+            "match": "Something went wrong",
+            "description": "The generic failure screen",
+            "severity": "high",
+        }
+    }
+
+
+def test_the_two_optional_columns_may_be_missing_altogether():
+    """`read_error_definitions` defaults both to `""`, so a two-column file is valid."""
+    csv = "error_code,match_string\nE001,Something went wrong\n"
+    found = parse([("errors.csv", csv)])["suite"]["errorDefinitions"]
+    assert found == {"E001": {"match": "Something went wrong", "description": "", "severity": ""}}
+
+
+def test_a_code_written_twice_is_the_later_row():
+    """`_load_error_definitions` merges every file into one dict keyed by code, so the
+    second definition replaces the first rather than joining it."""
+    later = "error_code,match_string\nE001,Frozen\n"
+    found = parse([("a.csv", ERRORS), ("b.csv", later)])["suite"]["errorDefinitions"]
+    assert found["E001"]["match"] == "Frozen"
+
+
+def test_a_row_missing_either_column_is_not_carried():
+    """It never matches anything, so there is nothing to store — and `lint` says so."""
+    csv = "error_code,match_string\nE001,\n,orphan\n"
+    assert parse([("errors.csv", csv)])["suite"]["errorDefinitions"] == {}
+    assert [d["code"] for d in report([("errors.csv", csv)])["diagnostics"]] == [
+        "error-definition-incomplete",
+        "error-definition-incomplete",
+    ]
+
+
+def test_a_suite_with_no_error_definitions_carries_none():
+    assert parse([("s.yaml", SUITE)])["suite"]["errorDefinitions"] == {}

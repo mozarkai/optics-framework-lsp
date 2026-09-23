@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from . import uiautomator2
+from . import uiautomator2, xcuitest
 
 TARGETS: dict[str, ModuleType] = {
     uiautomator2.NAME: uiautomator2,
+    xcuitest.NAME: xcuitest,
 }

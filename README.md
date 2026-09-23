@@ -344,6 +344,62 @@ For anything with a shell, `optics-lsp lint . --json` needs no bridge at all.
 
 ---
 
+## Native scripts
+
+`optics-lsp generate` rewrites a suite as a script that drives the device itself, with no
+optics-framework at run time:
+
+```console
+$ optics-lsp generate ~/projects/my_project > suite.py
+17 steps did not translate
+$ python suite.py
+PASS test_sign_in
+```
+
+Two targets: `uiautomator2` (the default, python) and `--target xcuitest` (swift). The
+script goes to stdout and the report of what did not come across to stderr, so the redirect
+above leaves a runnable file. `--json` answers both together.
+
+It is a different product, not a faster optics: a locator either matches or the step fails,
+because the fallbacks the framework applies when one misses — ocr, image templates,
+self-heal — are not there. That is what the report is for. Every step it could not
+translate is named with its file, its row and the reason, so a partial translation is never
+mistaken for a whole one.
+
+A test asserts that every keyword in the catalog is either translated or explained, per
+target, so a keyword a new optics release adds cannot be quietly missed.
+
+<details>
+<summary><b>What the two targets can express</b></summary>
+
+|              | keywords translated | refused |
+| ------------ | ------------------- | ------- |
+| uiautomator2 | 39                  | 12      |
+| xcuitest     | 37                  | 14      |
+
+`press keycode` and `get app version` are the two the android target has and the ios one
+does not: android keycodes have no ios concept, and a ui test runs in its own process and
+cannot read the app's bundle.
+
+Locators differ more than keywords do. uiautomator2 takes an xpath, so a locator is passed
+through and resolved on the device. **XCUITest has no xpath** — Appium appears to offer one
+because WebDriverAgent builds its own element tree, and XCTest itself has only element
+queries. No query is a translation of an xpath either: an xpath index counts within each
+parent where a query flattens every match into one list, and the tree a query walks is not
+the tree a page source dumps.
+
+So the ios target does not translate a locator. It carries it into the file as text and
+evaluates it there, against a snapshot of the live hierarchy — the tree it was written for —
+then walks the match back to an element by its chain of child indexes. Everything an xpath
+can say it can say: `last()`, a predicate mid-path, `contains()`, a grouped index. Only two
+things are refused, both at generation time so they are named in the report: an image
+template, and a locator naming a type or attribute iOS does not have, which is how an
+android locator in an ios suite is caught rather than silently matching nothing.
+
+</details>
+
+---
+
 ## The keyword catalog
 
 `src/optics_framework_lsp/keywords.py` is generated and holds **49 keywords from

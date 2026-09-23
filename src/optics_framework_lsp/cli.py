@@ -7,6 +7,7 @@ validates a whole suite in one shot and reports every finding:
     optics-lsp lint             # read {"files":[{"name","content"}]} as JSON on stdin
     optics-lsp lint PATH --json # the machine-readable report either way
     optics-lsp parse PATH       # what the files say, rather than what is wrong with them
+    optics-lsp generate PATH    # the suite as a native script (uiautomator2, or --target xcuitest)
 
 stdin is for a caller holding uploaded files in memory with nothing on disk, which is why it
 always answers JSON. A path is for a person, so it prints lines.
@@ -23,7 +24,7 @@ import sys
 from pathlib import Path
 
 
-def _batch(command: str, path: str | None, as_json: bool) -> int:
+def _batch(command: str, path: str | None, as_json: bool, target: str) -> int:
     """Exit 0 whenever the suite was validated — findings are data, not process failure — and
     1 if the input could not be read at all."""
     from .lint import as_text, parse, report, walk
@@ -53,6 +54,20 @@ def _batch(command: str, path: str | None, as_json: bool) -> int:
         sys.stdout.write("\n")
         return 0
 
+    # `generate` answers a script, and the report belongs on stderr so the script can be
+    # redirected into a file without it.
+    if command == "generate":
+        from .generate import as_text as generate_text, generate
+
+        body = generate(files, target)
+        if as_json:
+            json.dump(body, sys.stdout)
+            sys.stdout.write("\n")
+        else:
+            sys.stdout.write(body["source"])
+            print(generate_text(body), file=sys.stderr)
+        return 0
+
     found = report(files)
     if as_json:
         json.dump(found, sys.stdout)
@@ -67,19 +82,26 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["lint", "parse"],
-        help="validate a suite, or read one, instead of serving over stdio",
+        choices=["lint", "parse", "generate"],
+        help="validate a suite, read one, or rewrite it as a native script, "
+        "instead of serving over stdio",
     )
     parser.add_argument(
         "path", nargs="?", help="project directory to walk; omitted, the suite is read on stdin"
     )
     parser.add_argument("--json", action="store_true", help="report as JSON rather than lines")
+    parser.add_argument(
+        "--target",
+        default="uiautomator2",
+        choices=["uiautomator2", "xcuitest"],
+        help="which kind of script `generate` writes",
+    )
     # Unknown flags are ignored rather than rejected: editors pass their own (`--stdio`), and
     # refusing them would break a client for no gain.
     args, _ = parser.parse_known_args()
 
     if args.command:
-        raise SystemExit(_batch(args.command, args.path, args.json))
+        raise SystemExit(_batch(args.command, args.path, args.json, args.target))
 
     from .server import server
 

@@ -23,7 +23,7 @@ import re
 NAME = "xcuitest"
 EXTENSION = ".swift"
 
-_IMAGE = (".png", ".jpg", ".jpeg", ".bmp")
+from ..locators import REFUSED, kind
 
 # What a predicate may key on: an element's own attributes, plus `name`, which is
 # WebDriverAgent's and is the identifier or, failing that, the label. Anything else is
@@ -114,11 +114,16 @@ def _reads(locator: str) -> str | None:
 
 
 def vet_locator(locator: str) -> str | None:
-    """An image template has no native form. An xpath is carried through rather than
-    translated, so the only question here is whether the device could read it."""
-    if locator.lower().endswith(_IMAGE):
-        return "is an image template; no native query can match it"
-    if locator.startswith(("//", "(")):
+    """Why this locator has no form here, or None.
+
+    Four of the framework's kinds have no native equivalent at all. The rest are a path or a
+    string, and a path is carried rather than translated, so the only question left for one
+    is whether the device could read it.
+    """
+    found = kind(locator)
+    if found in REFUSED:
+        return REFUSED[found]
+    if found == "xpath":
         return _reads(locator)
     return None
 

@@ -12,8 +12,7 @@ import re
 NAME = "uiautomator2"
 EXTENSION = ".py"
 
-# Locators the framework reads as an image template. No native query matches one.
-_IMAGE = (".png", ".jpg", ".jpeg", ".bmp")
+from ..locators import REFUSED, kind
 
 
 def func_name(text: str) -> str:
@@ -35,10 +34,17 @@ def var_ref(name: str) -> str:
 
 
 def vet_locator(locator: str) -> str | None:
-    """Why this locator cannot be used, or None. `_find` splits xpath from accessibility id
-    at run time, so only an image template is beyond reach here."""
-    if locator.lower().endswith(_IMAGE):
-        return "is an image template; no native query can match it"
+    """Why this locator has no form here, or None.
+
+    Four of the framework's kinds have no native equivalent at all. `_find` splits a path
+    from an accessibility id at run time, so nothing else needs deciding here -- except a
+    path naming iOS types, which this device will never hold.
+    """
+    found = kind(locator)
+    if found in REFUSED:
+        return REFUSED[found]
+    if found == "xpath" and "XCUIElementType" in locator:
+        return "names XCUIElementType, which is an ios class and not an android one"
     return None
 
 

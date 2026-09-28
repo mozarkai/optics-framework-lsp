@@ -17,6 +17,7 @@ import yaml
 from .. import keywords as catalog
 from ..parser import parse_sources
 from ..parser.ast import AST, Block
+from .locators import normalise
 from .targets import TARGETS
 
 DEFAULT_TARGET = "uiautomator2"
@@ -79,7 +80,9 @@ def _elements(ast: AST, backend, findings: list[dict]) -> tuple[dict[str, str], 
     for element in ast.elements:
         if element.name in elements or not element.locators:
             continue
-        locator = element.locators[0].text
+        # Normalised first: `text=` and `xpath=` are the framework's prefixes rather than
+        # part of what is on screen, and a class is the node test of the path that finds it.
+        locator = normalise(element.locators[0].text)
         reason = backend.vet_locator(locator)
         if reason:
             unusable.add(element.name)

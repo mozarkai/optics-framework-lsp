@@ -360,9 +360,9 @@ Two targets: `uiautomator2` (the default, python) and `--target xcuitest` (swift
 script goes to stdout and the report of what did not come across to stderr, so the redirect
 above leaves a runnable file. `--json` answers both together.
 
-It is a different product, not a faster optics: a locator either matches or the step fails,
-because the fallbacks the framework applies when one misses — ocr, image templates,
-self-heal — are not there. That is what the report is for. Every step it could not
+It is a different product, not a faster optics. An element's fallback locators do come
+across and are tried in the suite's order, but once every one of them misses the step fails,
+because what the framework does next — ocr, image templates, self-heal — is not there. That is what the report is for. Every step it could not
 translate is named with its file, its row and the reason, so a partial translation is never
 mistaken for a whole one.
 
@@ -391,10 +391,12 @@ the tree a page source dumps.
 So the ios target does not translate a locator. It carries it into the file as text and
 evaluates it there, against a snapshot of the live hierarchy — the tree it was written for —
 then walks the match back to an element by its chain of child indexes. Everything an xpath
-can say it can say: `last()`, a predicate mid-path, `contains()`, a grouped index. Only two
-things are refused, both at generation time so they are named in the report: an image
-template, and a locator naming a type or attribute iOS does not have, which is how an
-android locator in an ios suite is caught rather than silently matching nothing.
+can say it can say: `last()`, a predicate mid-path, `contains()`, a grouped index. What is
+refused is refused at generation time, so it is named in the report: a locator kind with no
+native form (an image, a css selector, `text_only:`, `id:`), and a path naming a type or
+attribute iOS does not have, which is how an android locator in an ios suite is caught rather
+than silently matching nothing. A refused locator drops out of its element on its own; the
+element is refused only when none of its locators is left.
 
 </details>
 

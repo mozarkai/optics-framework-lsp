@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from optics_framework_lsp.generate import generate
+from optics_framework_lsp.generate.locators import kind, normalise
 from optics_framework_lsp.generate.targets import TARGETS
 from optics_framework_lsp.keywords import KEYWORDS
 
@@ -273,6 +274,78 @@ def test_the_generated_swift_typechecks_against_the_ios_sdk(tmp_path):
         capture_output=True, text=True,
     )
     assert done.returncode == 0, done.stderr
+
+
+# ------------------------------------------------------------------------ kinds
+
+
+@pytest.mark.parametrize(
+    "locator,expected",
+    [
+        ("Payment successful!", "text"),
+        ("#91", "text"),                      # not a css id: a digit cannot start one
+        ("text=Continue", "text"),
+        ("text_only:Continue", "text_only"),
+        ("paynow.png", "image"),
+        ("css=button.primary", "css"),
+        ("#login_btn", "css"),
+        ("input[name='user']", "css"),
+        ("//XCUIElementTypeButton", "xpath"),
+        ("xpath=//a/b", "xpath"),
+        ("id:login_btn", "id"),
+        ("android.widget.Button", "klass"),
+        ("XCUIElementTypeButton", "klass"),
+    ],
+)
+def test_a_locator_is_sorted_as_the_framework_sorts_it(locator, expected):
+    """`determine_element_type` decides this before any strategy sees a locator, and a
+    generated script that guesses differently looks for the wrong thing."""
+    assert kind(locator) == expected
+
+
+@pytest.mark.parametrize(
+    "locator,expected",
+    [
+        ("xpath=//a/b", "//a/b"),
+        ("text=Continue", "Continue"),
+        ("android.widget.Button", "//android.widget.Button"),
+        ("XCUIElementTypeButton", "//XCUIElementTypeButton"),
+        ("Payment successful!", "Payment successful!"),
+    ],
+)
+def test_a_prefix_the_framework_owns_does_not_travel(locator, expected):
+    """`text=` and `xpath=` name how to read the rest, not what is on screen. A class is the
+    node test of the path that finds one, so it is written that way rather than looked up
+    some second way."""
+    assert normalise(locator) == expected
+
+
+@pytest.mark.parametrize("target", sorted(TARGETS))
+@pytest.mark.parametrize(
+    "locator", ["text_only:Continue", "paynow.png", "css=button.primary", "#login_btn", "id:x"]
+)
+def test_a_kind_with_no_native_form_is_refused_rather_than_matched_as_text(target, locator):
+    """Each of these used to fall through as an accessibility id, so the generated lookup
+    searched for the framework's own prefix and could never match -- and said nothing."""
+    elements = f'Element_Name,Element_ID\nOdd,"{locator}"\n'
+    found = generate(_suite(elements, **{"modules/modules.csv": "module_name,module_step\n"}), target)
+    (finding,) = [f for f in found["unsupported"] if f["uri"].endswith("elements.csv")]
+    assert finding["code"] == "unusable-locator"
+
+
+def test_each_target_refuses_the_other_platform_s_classes():
+    ios = 'Element_Name,Element_ID\nC,XCUIElementTypeSecureTextField\n'
+    android = 'Element_Name,Element_ID\nC,android.widget.Button\n'
+    empty = {"modules/modules.csv": "module_name,module_step\n"}
+
+    def refused(elements, target):
+        found = generate(_suite(elements, **empty), target)["unsupported"]
+        return [f for f in found if f["uri"].endswith("elements.csv")]
+
+    assert refused(ios, "xcuitest") == []
+    assert refused(android, "uiautomator2") == []
+    assert "not an XCUIElementType" in refused(android, "xcuitest")[0]["message"]
+    assert "is an ios class" in refused(ios, "uiautomator2")[0]["message"]
 
 
 # ------------------------------------------------------------------------- cli

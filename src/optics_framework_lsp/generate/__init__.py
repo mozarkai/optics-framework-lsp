@@ -167,12 +167,12 @@ def _step(step, uri, modules, elements, unusable, backend, findings) -> list[str
         )
         return []
 
-    # Anywhere in the cell, not only a whole-cell reference: `${a}, ${b}` uses both.
+    # A whole cell only, as the runner resolves one: `${a}|${b}` is a literal there too.
     blocked = [
         match.group(1)
         for param in step.params
-        for match in _REFERENCE.finditer(param)
-        if match.group(1) in unusable
+        for match in [_REFERENCE.fullmatch(param.strip())]
+        if match and match.group(1) in unusable
     ]
     if blocked:
         finding = _finding(

@@ -53,8 +53,8 @@ def _one(call: str):
 
 
 def _els(p: list[str]) -> str:
-    """Assert keywords take one comma-separated string of locators, not one locator — the
-    same split `assert_elements` makes on the value."""
+    """Assert keywords take one `|`-separated string of locators, not one locator — the
+    same split `_assert_common` makes on the value."""
     return f"_split({p[0]})"
 
 
@@ -185,11 +185,9 @@ def _now(d, value):
 
 
 def _find(d, value):
-    """One locator is handed to uiautomator2, which waits for it on use. Several are polled
-    together inside that same wait, so a fallback costs no extra time on a miss."""
+    """Every locator is polled together inside uiautomator2's own wait, so a fallback costs
+    no extra time on a miss."""
     locators = _locators(value)
-    if len(locators) == 1:
-        return _selector(d, locators[0])
     deadline = time.time() + d.settings["wait_timeout"]
     while True:
         selector = _now(d, locators)
@@ -201,30 +199,27 @@ def _find(d, value):
 
 
 def _at(d, value, index):
-    locators = _locators(value)
-    for locator in locators[:-1]:
-        hits = d.xpath(locator).all() if locator.startswith(("//", "(")) else d(description=locator)
-        if len(hits) > index:
-            return hits[index]
-    last = locators[-1]
-    if last.startswith(("//", "(")):
-        return d.xpath(last).all()[index]
-    return d(description=last)[index]
+    *rest, last = _locators(value)
+    pick = lambda l: d.xpath(l).all() if l.startswith(("//", "(")) else d(description=l)
+    for locator in rest:
+        if len(pick(locator)) > index:
+            return pick(locator)[index]
+    return pick(last)[index]
 
 
 def _split(value):
-    """Assert keywords take one comma-separated string of locators. An element is already
-    its own list of fallbacks, and counts as one entry."""
+    """Assert keywords take one `|`-separated string of locators, as `_assert_common` splits
+    it. An element is already its own list of fallbacks, and counts as one entry."""
     if not isinstance(value, str):
         return [value]
-    return [part.strip() for part in value.split(",") if part.strip()]
+    return [part.strip() for part in value.split("|") if part.strip()]
 
 
 def _wait(d, values, timeout, rule="any"):
     deadline = time.time() + timeout
     while True:
         hits = [_now(d, value) is not None for value in values]
-        if any(hits) if rule == "any" else all(hits):
+        if any(hits) if rule.lower() == "any" else all(hits):
             return True
         if time.time() >= deadline:
             return False
@@ -241,7 +236,7 @@ def _wait_visible(d, values, timeout, rule="any"):
             element = _now(d, value)
             box = element.info.get("visibleBounds") if element is not None else None
             hits.append(bool(box) and box["right"] > box["left"] and box["bottom"] > box["top"])
-        if any(hits) if rule == "any" else all(hits):
+        if any(hits) if rule.lower() == "any" else all(hits):
             return True
         if time.time() >= deadline:
             return False
@@ -366,11 +361,7 @@ def render(config: dict, elements: dict[str, list[str]], modules: list, cases: l
         ),
         "",
         "ELEMENTS = {",
-        # One locator stays a string, so a suite without fallbacks reads as it always did.
-        *[
-            f"    {name!r}: {locators[0] if len(locators) == 1 else locators!r},"
-            for name, locators in elements.items()
-        ],
+        *[f"    {name!r}: {locators!r}," for name, locators in elements.items()],
         "}",
         "",
         "",

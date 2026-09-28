@@ -132,6 +132,10 @@ def _one(call: str):
     return lambda p: [call.format(*p)]
 
 
+def _rule(p: list[str], i: int) -> str:
+    return p[i] if len(p) > i and p[i] else '"any"'
+
+
 def _num(p: list[str], i: int, fallback: int) -> str:
     """An optional numeric param, or the fallback when the suite left the cell empty."""
     return f"Double({p[i]}) ?? {fallback}" if len(p) > i and p[i] else str(fallback)
@@ -160,10 +164,14 @@ EMIT: dict[str, tuple[int, object]] = {
     "clear element text": (1, _one("clearText({0})")),
     "get text": (1, _one('vars["last_text"] = el({0}).label')),
     # assertions
-    "assert presence": (2, lambda p: [f"XCTAssertTrue(waitFor({p[0]}, {_num(p, 1, 30)}), {p[0]})"]),
-    "assert visibility": (2, lambda p: [f"XCTAssertTrue(waitHittable({p[0]}, {_num(p, 1, 30)}), {p[0]})"]),
-    "validate element": (2, lambda p: [f"soft.append(waitFor({p[0]}, {_num(p, 1, 30)}))"]),
-    "validate screen": (2, lambda p: [f"soft.append(waitFor({p[0]}, {_num(p, 1, 30)}))"]),
+    "assert presence": (
+        3, lambda p: [f"XCTAssertTrue(waitForAll({p[0]}, {_num(p, 1, 30)}, {_rule(p, 2)}), {p[0]})"]
+    ),
+    "assert visibility": (
+        3, lambda p: [f"XCTAssertTrue(waitHittableAll({p[0]}, {_num(p, 1, 30)}, {_rule(p, 2)}), {p[0]})"]
+    ),
+    "validate element": (2, lambda p: [f"soft.append(waitForAll({p[0]}, {_num(p, 1, 30)}, \"any\"))"]),
+    "validate screen": (2, lambda p: [f"soft.append(waitForAll({p[0]}, {_num(p, 1, 30)}, \"any\"))"]),
     "is element": (3, lambda p: [f"_ = isElement({p[0]}, {p[1]}, {_num(p, 2, 30)})"]),
     "assert equality": (2, _one("XCTAssertEqual({0}, {1})")),
     # movement
@@ -489,12 +497,7 @@ _RESOLVER = '''    // MARK: locators
         return lookup(all[all.count - 1], index, &tree)
     }
 
-    /// One locator is resolved as is: XCTest waits for it on use. Several are waited for
-    /// together first, since that wait only ever covers the handle it was given.
-    func el(_ name: String) -> XCUIElement {
-        if locators(name).count > 1 { _ = waitFor(name, IMPLICIT_WAIT) }
-        return resolve(name)
-    }
+    func el(_ name: String) -> XCUIElement { return elAt(name, "0") }
 
     /// Whether any locator matches, answered from the tree. An assertion about presence does
     /// not need an XCUIElement, and materialising one costs another query.
@@ -511,6 +514,8 @@ _RESOLVER = '''    // MARK: locators
         return false
     }
 
+    /// One locator is resolved as is: XCTest waits for it on use. Several are waited for
+    /// together first, since that wait only ever covers the handle it was given.
     func elAt(_ name: String, _ index: String) -> XCUIElement {
         if locators(name).count > 1 { _ = waitFor(name, IMPLICIT_WAIT) }
         return resolve(name, Int(index) ?? 0)
@@ -540,7 +545,26 @@ _HELPERS = '''
     /// Visible is on screen, which XCTest reports as hittable.
     func waitHittable(_ name: String, _ timeout: Double) -> Bool {
         // Hittable is a property of the element, so this one does have to resolve.
-        return waitUntil(name, timeout) { let e = self.el($0); return e.exists && e.isHittable }
+        return waitUntil(name, timeout) { self.hittable($0) }
+    }
+
+    func hittable(_ name: String) -> Bool { let e = resolve(name); return e.exists && e.isHittable }
+
+    /// Assert keywords take one `|`-separated string of locators, as `_assert_common` splits
+    /// it, and a rule saying whether any or all of them must hold. All are checked inside
+    /// the one wait.
+    func waitForAll(_ raw: String, _ timeout: Double, _ rule: String) -> Bool {
+        return waitUntil(raw, timeout) { self.holds($0, rule, self.matches) }
+    }
+
+    func waitHittableAll(_ raw: String, _ timeout: Double, _ rule: String) -> Bool {
+        return waitUntil(raw, timeout) { self.holds($0, rule, self.hittable) }
+    }
+
+    func holds(_ raw: String, _ rule: String, _ test: (String) -> Bool) -> Bool {
+        let names = raw.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return rule.lowercased() == "all" ? names.allSatisfy(test) : names.contains(where: test)
     }
 
     /// Tolerant press: a miss is not a failure, as `detect_and_press` treats it.

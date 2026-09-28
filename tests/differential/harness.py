@@ -162,7 +162,15 @@ def cases(root, target: str) -> list[tuple[str, str]]:
     return found
 
 
-def write_suite(into: Path, found: list[tuple[str, str]]) -> list[tuple[str, str]]:
+# A path the fixture never holds. Each locator is also written as `f<i>`: this first, then the
+# real one on a second row, so the lookup has to miss, fall back, and land on the same element.
+DEAD = {
+    "xcuitest": '//XCUIElementTypeButton[@name="no-such-element"]',
+    "uiautomator2": '//android.widget.Button[@resource-id="no-such-element"]',
+}
+
+
+def write_suite(into: Path, found: list[tuple[str, str]], target: str) -> list[tuple[str, str]]:
     """The locators as a suite on disk, and that suite as `generate` takes it."""
     into.mkdir(parents=True, exist_ok=True)
     (into / "test_data").mkdir(exist_ok=True)
@@ -172,6 +180,8 @@ def write_suite(into: Path, found: list[tuple[str, str]]) -> list[tuple[str, str
         writer = csv.writer(handle)
         writer.writerow(["Element_Name", "Element_ID"])
         writer.writerows([f"e{i}", locator] for i, (locator, _) in enumerate(found))
+        for i, (locator, _) in enumerate(found):
+            writer.writerows([[f"f{i}", DEAD[target]], [f"f{i}", locator]])
     (into / "modules" / "modules.csv").write_text("module_name,module_step\nNoop,Launch App\n")
     (into / "test_cases" / "cases.csv").write_text("test_case,test_step\nSmoke,Noop\n")
     return [(str(f.relative_to(into)), f.read_text()) for f in sorted(into.rglob("*.csv"))]
@@ -209,16 +219,16 @@ def ios(simulator: str) -> int:
     root = ios_tree(dump.split("===TREE-START===")[1].split("===TREE-END===")[0])
 
     found = cases(root, "xcuitest")
-    source = generate(write_suite(HERE / "build" / "suite", found), "xcuitest")["source"]
+    source = generate(write_suite(HERE / "build" / "suite", found, "xcuitest"), "xcuitest")["source"]
     (probe.parent / "Generated.swift").write_text(
         source.replace("final class GeneratedUITests", "class GeneratedUITests"))
     probe.write_text(_IOS_VERIFY.replace("<checks>", "\n".join(
-        f'        check("e{i}", {expected!r}, {locator!r})'.replace("'", '"')
-        for i, (locator, expected) in enumerate(found))))
+        f'        check("{prefix}{i}", {expected!r}, {locator!r})'.replace("'", '"')
+        for prefix in "ef" for i, (locator, expected) in enumerate(found))))
 
     output = xcodebuild("test", "-only-testing:FixtureAppUITests/Verify")
-    mismatches = [line.strip()[2:] for line in output.splitlines() if line.strip().startswith("- //")]
-    return report(found, mismatches)
+    mismatches = [line.strip()[2:] for line in output.splitlines() if line.strip().startswith("- ")]
+    return report(found * 2, mismatches)
 
 
 def android() -> int:
@@ -271,7 +281,8 @@ def android() -> int:
         return 1
 
     script = HERE / "build" / "generated.py"
-    script.write_text(generate(write_suite(HERE / "build" / "suite", found), "uiautomator2")["source"])
+    suite = write_suite(HERE / "build" / "suite", found, "uiautomator2")
+    script.write_text(generate(suite, "uiautomator2")["source"])
 
     # The generated `_find` is the thing under test, so it is imported rather than restated.
     spec = importlib.util.spec_from_file_location("generated", script)
@@ -279,16 +290,19 @@ def android() -> int:
     spec.loader.exec_module(module)
 
     mismatches = []
-    for locator, expected in found:
+    checks = [(locator, locator, expected) for locator, expected in found]
+    checks += [(module.ELEMENTS[f"f{i}"], f"fallback to {locator}", expected)
+               for i, (locator, expected) in enumerate(found)]
+    for value, locator, expected in checks:
         try:
-            element = module._find(device, locator)
+            element = module._find(device, value)
             info = element.info if hasattr(element, "info") else element.get().info
             got = info.get("resourceName") or info.get("contentDescription") or info.get("text") or ""
         except Exception as error:  # a miss is an answer, and it is the wrong one
             got = f"NO MATCH ({type(error).__name__})"
         if (got or "").split("/")[-1] != expected.split("/")[-1]:
             mismatches.append(f"{locator}\n     dump said:   {expected}\n     script gave: {got}")
-    return report(found, mismatches)
+    return report(checks, mismatches)
 
 
 _IOS_PROBE = '''import XCTest
@@ -315,12 +329,12 @@ final class Verify: GeneratedUITests {
     func check(_ name: String, _ expected: String, _ locator: String) {
         let element = el(name)
         guard element.exists else {
-            failures.append("- \\(locator)\\n     xpath said: \\(expected)\\n     query gave: NO MATCH")
+            failures.append("- \\(name) \\(locator)\\n     xpath said: \\(expected)\\n     query gave: NO MATCH")
             return
         }
         let got = element.identifier.isEmpty ? element.label : element.identifier
         if got != expected {
-            failures.append("- \\(locator)\\n     xpath said: \\(expected)\\n     query gave: \\(got)")
+            failures.append("- \\(name) \\(locator)\\n     xpath said: \\(expected)\\n     query gave: \\(got)")
         }
     }
 

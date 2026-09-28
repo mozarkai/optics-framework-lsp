@@ -165,8 +165,8 @@ def test_an_xpath_is_carried_into_the_file_rather_than_translated():
     flattens, and it was written against a tree a query does not walk. So the locator travels
     as text and is evaluated on the device, against a snapshot of the real hierarchy."""
     source = generate(_suite(IOS), "xcuitest")["source"]
-    assert '"Btn": "//XCUIElementTypeButton[@name=\\"Go\\"]"' in source
-    assert "func evaluate(_ raw: String) -> [Node]" in source
+    assert '"Btn": ["//XCUIElementTypeButton[@name=\\"Go\\"]"]' in source
+    assert "func evaluate(_ raw: String, in root: Node) -> [Node]" in source
     assert "try? app.snapshot()" in source
 
 
@@ -186,7 +186,7 @@ def test_a_locator_is_resolved_by_name_so_a_wait_can_re_resolve():
 def test_a_plain_string_needs_no_snapshot():
     """It names screen text or an accessibility id, which has no path to walk."""
     source = generate(_suite(IOS), "xcuitest")["source"]
-    assert '"Label": "Sign in"' in source
+    assert '"Label": ["Sign in"]' in source
     assert 'identifier == %@ OR label == %@ OR value == %@' in source
 
 
@@ -383,3 +383,106 @@ def test_the_cli_takes_a_target(tmp_path):
     )
     assert done.returncode == 0
     assert "import XCTest" in done.stdout
+
+
+# ---------------------------------------------------------------- fallbacks
+
+FALLBACK = {
+    "uiautomator2": 'Element_Name,Element_ID,Element_ID_2\nBtn,btn.png,//android.widget.Button\n',
+    "xcuitest": 'Element_Name,Element_ID,Element_ID_2\nBtn,btn.png,//XCUIElementTypeButton\n',
+}
+
+
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_an_unsupported_first_locator_leaves_the_supported_one_behind_it(target):
+    """The image is dropped and said so; the element is not, because the path behind it is
+    enough — which is what optics would have fallen back to anyway."""
+    body = generate(_suite(FALLBACK[target]), target)
+    codes = [f["code"] for f in body["unsupported"]]
+    assert "unusable-locator" not in codes
+    [dropped] = [f for f in body["unsupported"] if f["code"] == "locator-dropped"]
+    assert "btn.png" in dropped["message"] and "image" in dropped["message"]
+
+
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_an_element_with_only_unsupported_locators_is_still_unusable(target):
+    elements = "Element_Name,Element_ID,Element_ID_2\nBtn,btn.png,.card\n"
+    codes = [f["code"] for f in generate(_suite(elements), target)["unsupported"]]
+    assert "unusable-locator" in codes
+    assert "locator-dropped" not in codes
+
+
+def test_every_supported_locator_travels_in_the_suites_order():
+    elements = "Element_Name,Element_ID,Element_ID_2\nBtn,//android.widget.Button,Go\n"
+    source = generate(_suite(elements), "uiautomator2")["source"]
+    assert "'Btn': ['//android.widget.Button', 'Go']," in source
+    ast.parse(source)
+    elements = "Element_Name,Element_ID,Element_ID_2\nBtn,//XCUIElementTypeButton,Go\n"
+    source = generate(_suite(elements), "xcuitest")["source"]
+    assert '"Btn": ["//XCUIElementTypeButton", "Go"],' in source
+
+
+def test_a_name_on_two_rows_is_one_element_with_both_locators():
+    """`read_elements` extends a name's list per row rather than keeping the first."""
+    elements = "Element_Name,Element_ID\nBtn,//android.widget.Button\nBtn,Go\n"
+    source = generate(_suite(elements), "uiautomator2")["source"]
+    assert "'Btn': ['//android.widget.Button', 'Go']," in source
+
+
+class _Selector:
+    def __init__(self, device, locator):
+        self.device, self.locator = device, locator
+
+    @property
+    def exists(self):
+        self.device.checked.append(self.locator)
+        return self.locator in self.device.present
+
+
+class _Device:
+    """Just enough of a uiautomator2 device for the lookup helpers to run against."""
+
+    def __init__(self, *present):
+        self.present, self.checked = set(present), []
+        self.settings = {"wait_timeout": 0.5}
+
+    def xpath(self, locator):
+        return _Selector(self, locator)
+
+    def __call__(self, description):
+        return _Selector(self, description)
+
+
+def _helpers():
+    """The generated script's own helpers, run here rather than read."""
+    sys.modules.setdefault("uiautomator2", type(sys)("uiautomator2"))
+    source = generate(_suite(), "uiautomator2")["source"]
+    scope: dict = {"__file__": "generated.py"}
+    exec(source.split("ELEMENTS = {")[0], scope)
+    return scope
+
+
+def test_the_first_locator_that_matches_wins_in_the_suites_order():
+    helpers = _helpers()
+    device = _Device("//b", "Go")
+    assert helpers["_find"](device, ["//a", "//b", "Go"]).locator == "//b"
+    assert device.checked == ["//a", "//b"]
+
+
+def test_a_fallback_is_polled_inside_the_one_wait_not_after_it():
+    """A miss on every locator costs one timeout, not one per locator."""
+    import time
+
+    helpers = _helpers()
+    started = time.time()
+    assert not helpers["_wait"](_Device(), [["//a", "//b", "//c"]], 0.5)
+    assert time.time() - started < 1.0
+    with pytest.raises(AssertionError, match="none of"):
+        helpers["_find"](_Device(), ["//a", "//b"])
+
+
+def test_an_assertion_counts_an_element_with_fallbacks_as_one_entry():
+    helpers = _helpers()
+    assert helpers["_split"](["//a", "Go"]) == [["//a", "Go"]]
+    assert helpers["_split"]("//a, Go") == ["//a", "Go"]
+    assert helpers["_wait"](_Device("Go"), [["//a", "Go"]], 0.1, "all")

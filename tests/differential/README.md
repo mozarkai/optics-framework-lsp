@@ -13,12 +13,16 @@ absolute paths from the root with sibling indexes, and those paths truncated to 
 steps. The expected answer comes from evaluating that same xpath with lxml over that same
 tree, so a disagreement is the generator being wrong rather than the fixture being odd.
 
+Every locator is checked twice: once as itself, and once as the second locator of an element
+whose first names nothing, written across two rows. That second pass is the fallback path —
+the rows merging into one element, the miss, and the landing on the same element anyway.
+
 ```console
 $ uv run --with lxml python tests/differential/harness.py ios
-204 of 204 locators agree
+490 of 490 locators agree
 
 $ uv run --with lxml --with uiautomator2 python tests/differential/harness.py android
-28 of 28 locators agree
+358 of 358 locators agree
 ```
 
 Neither runs in CI — one needs Xcode and a booted simulator, the other adb and a running

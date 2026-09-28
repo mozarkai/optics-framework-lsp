@@ -82,7 +82,7 @@ def test_a_module_becomes_a_function_and_a_test_case_calls_it():
 def test_a_locator_is_split_from_an_accessibility_id_at_run_time():
     """uiautomator2 can take an xpath, so both reach `_find` as plain strings."""
     source = generate(_suite())["source"]
-    assert "'Btn': '//android.widget.Button'" in source
+    assert "'Btn': ['//android.widget.Button']" in source
     assert "_find(d, ELEMENTS['Btn']).click()" in source
 
 
@@ -146,14 +146,16 @@ def test_an_element_nothing_uses_is_reported_but_does_not_stop_the_script(target
     assert [f["code"] for f in found["unsupported"]] == ["unusable-locator"]
 
 
-def test_an_element_named_inside_a_longer_param_still_counts_as_used():
-    """`${a}, ${b}` names both, so it cannot slip past the refusal as a literal."""
+def test_a_reference_inside_a_longer_cell_is_left_as_the_runner_leaves_it():
+    """The runner resolves a cell only when it is one whole `${name}`; `${a}|${b}` reaches
+    the keyword as text. Resolving it here would make the script do what optics does not,
+    and it is not a use of the element that could block the script either."""
     elements = ANDROID + "Logo,logo.png\n"
-    modules = MODULES + "Open,Assert Presence,\"${Btn}, ${Logo}\",\n"
+    modules = MODULES + "Open,Assert Presence,${Btn}|${Logo},\n"
     found = generate(_suite(elements, **{"modules/modules.csv": modules}))
-    assert found["source"] is None
-    [needs] = [f for f in found["unsupported"] if f["code"] == "needs-unusable-element"]
-    assert "Logo" in needs["message"] and "Btn" not in needs["message"]
+    assert found["source"] is not None
+    assert "'${Btn}|${Logo}'" in found["source"]
+    assert "needs-unusable-element" not in [f["code"] for f in found["unsupported"]]
 
 
 def test_the_cli_writes_nothing_and_fails_when_the_script_is_refused(tmp_path):
@@ -235,7 +237,7 @@ def test_a_locator_is_resolved_by_name_so_a_wait_can_re_resolve():
         "Open,Press Element,${Btn},\n"
     )
     source = generate(_suite(IOS, **{"modules/modules.csv": modules}), "xcuitest")["source"]
-    assert 'XCTAssertTrue(waitFor("Btn", Double("5") ?? 30), "Btn")' in source
+    assert 'XCTAssertTrue(waitForAll("Btn", Double("5") ?? 30, "any"), "Btn")' in source
     assert 'el("Btn").tap()' in source
 
 
@@ -540,5 +542,30 @@ def test_a_fallback_is_polled_inside_the_one_wait_not_after_it():
 def test_an_assertion_counts_an_element_with_fallbacks_as_one_entry():
     helpers = _helpers()
     assert helpers["_split"](["//a", "Go"]) == [["//a", "Go"]]
-    assert helpers["_split"]("//a, Go") == ["//a", "Go"]
+    assert helpers["_split"]("//a | Go") == ["//a", "Go"]
     assert helpers["_wait"](_Device("Go"), [["//a", "Go"]], 0.1, "all")
+
+
+# ------------------------------------------------------- several locators in one cell
+
+def test_an_assertion_splits_its_cell_on_a_bar_as_the_verifier_does():
+    """`_assert_common` splits on `|`, whatever its docstring says; a comma is part of a
+    locator, and `//a[@text="1,2"]` must reach the device whole."""
+    helpers = _helpers()
+    assert helpers["_split"]('//a[@text="1,2"]') == ['//a[@text="1,2"]']
+    assert helpers["_split"]("Login|Welcome") == ["Login", "Welcome"]
+
+
+def test_the_any_and_all_rules_hold_as_the_verifier_reads_them():
+    helpers = _helpers()
+    device = _Device("Login")
+    assert helpers["_wait"](device, ["Login", "Welcome"], 0.1, "ANY")
+    assert not helpers["_wait"](device, ["Login", "Welcome"], 0.1, "all")
+
+
+def test_the_ios_target_splits_the_cell_and_honours_the_rule():
+    """It used to take the whole cell as one locator and drop the rule."""
+    modules = "module_name,module_step,param_1,param_2,param_3\nOpen,Assert Presence,Login|Welcome,10,all\n"
+    found = generate(_suite(IOS, **{"modules/modules.csv": modules}), "xcuitest")
+    assert 'waitForAll("Login|Welcome", Double("10") ?? 30, "all")' in found["source"]
+    assert "params-dropped" not in [f["code"] for f in found["unsupported"]]

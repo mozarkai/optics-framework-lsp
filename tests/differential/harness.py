@@ -342,6 +342,9 @@ final class Verify: GeneratedUITests {
         app.launch()
         XCTAssertTrue(app.buttons["Alpha"].waitForExistence(timeout: 30))
 <checks>
+        // A `|` cell and its rule, as `_assert_common` reads them: one present and one not.
+        if !waitForAll("e0|no-such-element", 1, "any") { failures.append("- any: e0|no-such-element should hold") }
+        if waitForAll("e0|no-such-element", 1, "all") { failures.append("- all: e0|no-such-element should not hold") }
         failures.forEach { print($0) }
         XCTAssertEqual(failures.count, 0)
     }

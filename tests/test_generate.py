@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from optics_framework_lsp.generate import generate
+from optics_framework_lsp.generate import as_text, generate
 from optics_framework_lsp.generate.locators import kind, normalise
 from optics_framework_lsp.generate.targets import TARGETS
 from optics_framework_lsp.keywords import KEYWORDS
@@ -124,14 +124,70 @@ def test_a_keyword_unsupported_on_one_target_only_says_so_per_target():
     assert any("android keycodes" in reason for reason in reasons)
 
 
-def test_an_image_template_is_reported_and_the_steps_using_it_are_too():
-    """Reporting the element alone would leave a step emitting a call to nothing."""
-    elements = ANDROID + "Logo,logo.png\n"
+BASE = {"uiautomator2": ANDROID, "xcuitest": IOS}
+
+
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_no_script_is_written_when_a_step_uses_an_element_with_no_usable_locator(target):
+    """A script without that step would pass while testing less than the suite does."""
+    elements = BASE[target] + "Logo,logo.png\n"
     modules = MODULES + "Open,Press Element,${Logo},\n"
+    found = generate(_suite(elements, **{"modules/modules.csv": modules}), target)
+    assert found["source"] is None
+    assert sorted(f["code"] for f in found["unsupported"]) == ["needs-unusable-element", "unusable-locator"]
+
+
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_an_element_nothing_uses_is_reported_but_does_not_stop_the_script(target):
+    """Element tables are shared between suites; a row this one never touches is not its
+    problem to block on."""
+    found = generate(_suite(BASE[target] + "Logo,logo.png\n"), target)
+    assert found["source"] is not None
+    assert [f["code"] for f in found["unsupported"]] == ["unusable-locator"]
+
+
+def test_an_element_named_inside_a_longer_param_still_counts_as_used():
+    """`${a}, ${b}` names both, so it cannot slip past the refusal as a literal."""
+    elements = ANDROID + "Logo,logo.png\n"
+    modules = MODULES + "Open,Assert Presence,\"${Btn}, ${Logo}\",\n"
     found = generate(_suite(elements, **{"modules/modules.csv": modules}))
-    codes = [f["code"] for f in found["unsupported"]]
-    assert codes == ["unusable-locator", "unusable-locator"]
-    assert "logo.png" not in found["source"]
+    assert found["source"] is None
+    [needs] = [f for f in found["unsupported"] if f["code"] == "needs-unusable-element"]
+    assert "Logo" in needs["message"] and "Btn" not in needs["message"]
+
+
+def test_the_cli_writes_nothing_and_fails_when_the_script_is_refused(tmp_path):
+    """So `optics-lsp generate . > suite.py` fails where it can be seen, rather than leaving a
+    partial script behind with a zero exit."""
+    (tmp_path / "config.yaml").write_text(CONFIG)
+    (tmp_path / "elements.csv").write_text(ANDROID + "Logo,logo.png\n")
+    (tmp_path / "m.csv").write_text(MODULES + "Open,Press Element,${Logo},\n")
+    (tmp_path / "cases.csv").write_text(CASES)
+
+    done = subprocess.run(
+        [sys.executable, "-m", "optics_framework_lsp.cli", "generate", str(tmp_path)],
+        capture_output=True, text=True,
+    )
+    assert done.returncode == 1
+    assert done.stdout == ""
+    assert "no script written" in done.stderr
+
+
+def test_a_refusal_names_each_element_every_reason_and_the_steps_that_need_it():
+    """Enough to fix the suite from the message alone, with the blocking cause first and what
+    would not have blocked kept apart from it."""
+    elements = ANDROID + "Logo,logo.png\nLogo,.brand\nUnused,unused.png\n"
+    modules = MODULES + "Open,Press Element,${Logo},\nOpen,Invoke API,login,\n"
+    body = generate(_suite(elements, **{"modules/modules.csv": modules}))
+    text = as_text(body)
+    first, _, rest = text.partition("\n")
+    assert first.startswith("error: no script written") and "1 element(s)" in first
+    blocking, _, after = rest.partition("Also not translatable")
+    assert "logo.png" in blocking and ".brand" in blocking
+    assert "image template" in blocking and "css selector" in blocking
+    assert "needed by" in blocking and "Press Element" in blocking
+    assert "Unused" not in blocking and "Invoke API" not in blocking
+    assert "Unused" in after and "Invoke API" in after
 
 
 def test_params_the_translation_drops_are_named():

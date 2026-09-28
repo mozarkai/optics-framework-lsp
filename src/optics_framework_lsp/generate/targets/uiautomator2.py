@@ -162,7 +162,7 @@ SOFT = []
 OUT = Path(__file__).parent / "output"
 
 
-def _find(d, locator):
+def _selector(d, locator):
     """A locator is an xpath when it reads like one, else an accessibility id — the same
     split `determine_element_type` makes, so a name resolves here as it does under optics."""
     if locator.startswith(("//", "(")):
@@ -170,20 +170,60 @@ def _find(d, locator):
     return d(description=locator)
 
 
-def _at(d, locator, index):
-    if locator.startswith(("//", "(")):
-        return d.xpath(locator).all()[index]
-    return d(description=locator)[index]
+def _locators(value):
+    """An element is a list of fallbacks; a variable or a literal is one locator."""
+    return [value] if isinstance(value, str) else value
 
 
-def _split(elements):
-    return [part.strip() for part in elements.split(",") if part.strip()]
+def _now(d, value):
+    """The first locator that matches right now, in the suite's order, or None."""
+    for locator in _locators(value):
+        selector = _selector(d, locator)
+        if selector.exists:
+            return selector
+    return None
 
 
-def _wait(d, locators, timeout, rule="any"):
+def _find(d, value):
+    """One locator is handed to uiautomator2, which waits for it on use. Several are polled
+    together inside that same wait, so a fallback costs no extra time on a miss."""
+    locators = _locators(value)
+    if len(locators) == 1:
+        return _selector(d, locators[0])
+    deadline = time.time() + d.settings["wait_timeout"]
+    while True:
+        selector = _now(d, locators)
+        if selector is not None:
+            return selector
+        if time.time() >= deadline:
+            raise AssertionError("none of %r matched" % (locators,))
+        time.sleep(0.2)
+
+
+def _at(d, value, index):
+    locators = _locators(value)
+    for locator in locators[:-1]:
+        hits = d.xpath(locator).all() if locator.startswith(("//", "(")) else d(description=locator)
+        if len(hits) > index:
+            return hits[index]
+    last = locators[-1]
+    if last.startswith(("//", "(")):
+        return d.xpath(last).all()[index]
+    return d(description=last)[index]
+
+
+def _split(value):
+    """Assert keywords take one comma-separated string of locators. An element is already
+    its own list of fallbacks, and counts as one entry."""
+    if not isinstance(value, str):
+        return [value]
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _wait(d, values, timeout, rule="any"):
     deadline = time.time() + timeout
     while True:
-        hits = [_find(d, locator).exists for locator in locators]
+        hits = [_now(d, value) is not None for value in values]
         if any(hits) if rule == "any" else all(hits):
             return True
         if time.time() >= deadline:
@@ -191,15 +231,15 @@ def _wait(d, locators, timeout, rule="any"):
         time.sleep(0.2)
 
 
-def _wait_visible(d, locators, timeout, rule="any"):
+def _wait_visible(d, values, timeout, rule="any"):
     """Present is in the tree; visible is on screen, which uiautomator2 reports as a
     visibleBounds with area."""
     deadline = time.time() + timeout
     while True:
         hits = []
-        for locator in locators:
-            element = _find(d, locator)
-            box = element.info.get("visibleBounds") if element.exists else None
+        for value in values:
+            element = _now(d, value)
+            box = element.info.get("visibleBounds") if element is not None else None
             hits.append(bool(box) and box["right"] > box["left"] and box["bottom"] > box["top"])
         if any(hits) if rule == "any" else all(hits):
             return True
@@ -208,11 +248,10 @@ def _wait_visible(d, locators, timeout, rule="any"):
         time.sleep(0.2)
 
 
-def _press_if(d, locator, timeout):
+def _press_if(d, value, timeout):
     """Tolerant press: a miss is not a failure, as `detect_and_press` treats it."""
-    element = _find(d, locator)
-    if element.wait(timeout=float(timeout)):
-        element.click()
+    if _wait(d, [value], float(timeout)):
+        _now(d, value).click()
 
 
 def _record(ok):
@@ -220,15 +259,14 @@ def _record(ok):
     SOFT.append(bool(ok))
 
 
-def _is(d, locator, state, timeout):
-    element = _find(d, locator)
+def _is(d, value, state, timeout):
     state = str(state).strip().lower()
     if state in ("visible", "present", "exists"):
-        return element.wait(timeout=float(timeout))
+        return _wait(d, [value], float(timeout))
     if state == "enabled":
-        return element.wait(timeout=float(timeout)) and element.info["enabled"]
+        return _wait(d, [value], float(timeout)) and _now(d, value).info["enabled"]
     if state in ("invisible", "absent", "gone"):
-        return not _wait(d, [locator], float(timeout))
+        return not _wait(d, [value], float(timeout))
     raise ValueError("unknown element state: " + state)
 
 
@@ -257,11 +295,11 @@ def _swipe_pct(d, px, py, direction, length):
     _swipe_at(d, int(width * px / 100), int(height * py / 100), direction, length)
 
 
-def _swipe_until(d, locator, direction, timeout):
+def _swipe_until(d, value, direction, timeout):
     deadline = time.time() + float(timeout)
-    while not _find(d, locator).exists:
+    while _now(d, value) is None:
         if time.time() >= deadline:
-            raise AssertionError("never appeared: " + locator)
+            raise AssertionError("never appeared: %r" % (value,))
         d.swipe_ext(direction.lower())
 
 
@@ -312,13 +350,13 @@ if __name__ == "__main__":
 '''
 
 
-def render(config: dict, elements: dict[str, str], modules: list, cases: list) -> str:
+def render(config: dict, elements: dict[str, list[str]], modules: list, cases: list) -> str:
     """One module-level function per module, one per test case, and a runner."""
     out = [
         "# Generated by `optics-lsp generate`. Do not edit — regenerate instead.",
         "#",
-        "# This talks to the device directly, so the fallbacks optics applies when a locator",
-        "# misses (ocr, image templates, self-heal) are not here. A locator either matches or",
+        "# This talks to the device directly. An element's locators are tried in order, but",
+        "# what optics does once they all miss (ocr, image templates, self-heal) is not here:",
         "# the step fails.",
         "",
         _PRELUDE.format(
@@ -328,7 +366,11 @@ def render(config: dict, elements: dict[str, str], modules: list, cases: list) -
         ),
         "",
         "ELEMENTS = {",
-        *[f"    {name!r}: {locator!r}," for name, locator in elements.items()],
+        # One locator stays a string, so a suite without fallbacks reads as it always did.
+        *[
+            f"    {name!r}: {locators[0] if len(locators) == 1 else locators!r},"
+            for name, locators in elements.items()
+        ],
         "}",
         "",
         "",

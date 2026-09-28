@@ -71,33 +71,54 @@ def _config(files: list[tuple[str, str]]) -> dict:
     return {}
 
 
-def _elements(ast: AST, backend, findings: list[dict]) -> tuple[dict[str, str], set[str]]:
-    """Name to locator, the first definition winning as `resolve_with_fallback` tries them
-    in order. A locator the target cannot express is reported here once, and its name
-    returned so the steps that use it are reported too rather than emitting a broken call."""
-    elements: dict[str, str] = {}
-    unusable: set[str] = set()
+def _elements(ast: AST, backend, findings: list[dict]) -> tuple[dict[str, list[str]], set[str]]:
+    """Name to every locator the target can carry, in the order `resolve_with_fallback`
+    tries them. One the target cannot express is dropped and reported; an element left with
+    none is returned as unusable, so the steps that use it are reported too rather than
+    emitting a broken call."""
+    # A name on several rows is one element: `read_elements` extends its list per row.
+    rows: dict[str, list] = {}
     for element in ast.elements:
-        if element.name in elements or not element.locators:
+        rows.setdefault(element.name, []).append(element)
+
+    elements: dict[str, list[str]] = {}
+    unusable: set[str] = set()
+    for name, group in rows.items():
+        element = group[0]
+        cells = [(row.uri, cell) for row in group for cell in row.locators]
+        if not cells:
             continue
-        # Normalised first: `text=` and `xpath=` are the framework's prefixes rather than
-        # part of what is on screen, and a class is the node test of the path that finds it.
-        locator = normalise(element.locators[0].text)
-        reason = backend.vet_locator(locator)
-        if reason:
-            unusable.add(element.name)
+        kept, dropped = [], []
+        for uri, cell in cells:
+            # Normalised first: `text=` and `xpath=` are the framework's prefixes rather than
+            # part of what is on screen, and a class is the node test of the path that finds it.
+            locator = normalise(cell.text)
+            reason = backend.vet_locator(locator)
+            if reason:
+                dropped.append((uri, cell, reason))
+            elif locator not in kept:
+                kept.append(locator)
+        if not kept:
+            unusable.add(name)
             findings.append(
-                _finding(element.uri, element.row, "unusable-locator", f"'{element.name}' {reason}")
+                _finding(element.uri, element.row, "unusable-locator", f"'{name}' {dropped[0][2]}")
             )
             continue
-        elements[element.name] = locator
+        for uri, cell, reason in dropped:
+            findings.append(
+                _finding(
+                    uri, cell.row, "locator-dropped",
+                    f"'{name}' keeps {len(kept)} locator(s) but not {cell.text}, which {reason}",
+                )
+            )
+        elements[name] = kept
     return elements, unusable
 
 
 _REFERENCE = re.compile(r"\$\{([^}]+)\}")
 
 
-def _param(raw: str, elements: dict[str, str], backend) -> str:
+def _param(raw: str, elements: dict[str, list[str]], backend) -> str:
     """One param as an expression in the target's language: an element, a variable, or a
     literal."""
     match = _REFERENCE.fullmatch(raw.strip())

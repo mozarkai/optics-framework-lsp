@@ -366,6 +366,11 @@ because what the framework does next — ocr, image templates, self-heal — is 
 translate is named with its file, its row and the reason, so a partial translation is never
 mistaken for a whole one.
 
+One case writes no script at all: a step using an element none of whose locators the target
+can carry. Leaving that step out would give a script that passes while testing less than the
+suite does, so the command prints the report, writes nothing to stdout and exits 1. An element
+nothing uses is reported and does not stop it.
+
 A test asserts that every keyword in the catalog is either translated or explained, per
 target, so a keyword a new optics release adds cannot be quietly missed.
 

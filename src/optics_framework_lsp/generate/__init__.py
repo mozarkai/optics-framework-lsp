@@ -39,10 +39,13 @@ def generate(files: list[tuple[str, str]], target: str = DEFAULT_TARGET) -> dict
     ]
     cases = [(block.name, _case(block, modules, backend, findings)) for block in ast.test_cases]
 
+    # A script missing the steps that touch an element would pass while testing less than
+    # the suite does, so none is written. An element nothing uses does not stop it.
+    refused = any(f["code"] == "needs-unusable-element" for f in findings)
     return {
         "target": target,
         "extension": backend.EXTENSION,
-        "source": backend.render(_config(files), elements, bodies, cases),
+        "source": None if refused else backend.render(_config(files), elements, bodies, cases),
         "unsupported": sorted(findings, key=lambda f: (f["uri"], f["row"])),
     }
 
@@ -100,9 +103,14 @@ def _elements(ast: AST, backend, findings: list[dict]) -> tuple[dict[str, list[s
                 kept.append(locator)
         if not kept:
             unusable.add(name)
-            findings.append(
-                _finding(element.uri, element.row, "unusable-locator", f"'{name}' {dropped[0][2]}")
+            reasons = "; ".join(f"{cell.text} {reason}" for _, cell, reason in dropped)
+            finding = _finding(
+                element.uri, element.row, "unusable-locator",
+                f"'{name}' has no locator this target can use: {reasons}",
             )
+            finding["element"] = name
+            finding["locators"] = [[cell.text, reason] for _, cell, reason in dropped]
+            findings.append(finding)
             continue
         for uri, cell, reason in dropped:
             findings.append(
@@ -159,16 +167,21 @@ def _step(step, uri, modules, elements, unusable, backend, findings) -> list[str
         )
         return []
 
+    # Anywhere in the cell, not only a whole-cell reference: `${a}, ${b}` uses both.
     blocked = [
         match.group(1)
         for param in step.params
-        for match in [_REFERENCE.fullmatch(param.strip())]
-        if match and match.group(1) in unusable
+        for match in _REFERENCE.finditer(param)
+        if match.group(1) in unusable
     ]
     if blocked:
-        findings.append(
-            _finding(uri, step.row, "unusable-locator", f"'{raw}' needs {blocked[0]}, which has no query")
+        finding = _finding(
+            uri, step.row, "needs-unusable-element",
+            f"'{raw}' needs {', '.join(blocked)}, which has no usable locator",
         )
+        finding["step"] = raw
+        finding["elements"] = blocked
+        findings.append(finding)
         return []
 
     arity, emit = backend.EMIT[keyword]
@@ -212,7 +225,40 @@ def _case(block: Block, modules: dict[str, Block], backend, findings) -> list[st
 
 
 def as_text(body: dict) -> str:
-    """The report for a person: one line per step that did not translate."""
+    """The report for a person: one line per step that did not translate, or, when no script
+    was written, which elements stopped it, why each of their locators was refused, and
+    which steps needed them."""
     findings = body["unsupported"]
-    lines = [f"{f['uri']}:{f['row']}: {f['code']}: {f['message']}" for f in findings]
-    return "\n".join([*lines, f"{len(findings)} steps did not translate"])
+    line = lambda f: f"{f['uri']}:{f['row']}: {f['code']}: {f['message']}"
+    if body["source"] is not None:
+        return "\n".join([*map(line, findings), f"{len(findings)} steps did not translate"])
+
+    needed: dict[str, list[dict]] = {}
+    for f in findings:
+        for name in f.get("elements", []):
+            needed.setdefault(name, []).append(f)
+    blocking = [f for f in findings if f["code"] == "unusable-locator" and f["element"] in needed]
+    steps = sum(len(v) for v in needed.values())
+
+    out = [
+        f"error: no script written. {len(blocking)} element(s) have no locator the "
+        f"{body['target']} target can use, and {steps} step(s) need them.",
+    ]
+    for f in blocking:
+        out += ["", f"  {f['element']}  ({f['uri']}:{f['row']})"]
+        width = max(len("needed by"), *(len(text) for text, _ in f["locators"]))
+        out += [f"    {text:<{width}}  {reason}" for text, reason in f["locators"]]
+        out += [
+            f"    {'needed by' if i == 0 else '':<{width}}  {u['uri']}:{u['row']}  {u['step']}"
+            for i, u in enumerate(needed[f["element"]])
+        ]
+    out += [
+        "",
+        "Give each an xpath, text or class locator (a fallback on another row is enough), "
+        "or remove the steps that use it.",
+    ]
+    rest = [f for f in findings if f not in blocking and f["code"] != "needs-unusable-element"]
+    if rest:
+        out += ["", "Also not translatable, though these alone would not have stopped the script:"]
+        out += [f"  {line(f)}" for f in rest]
+    return "\n".join(out)

@@ -64,9 +64,9 @@ def _batch(command: str, path: str | None, as_json: bool, target: str) -> int:
             json.dump(body, sys.stdout)
             sys.stdout.write("\n")
         else:
-            sys.stdout.write(body["source"])
+            sys.stdout.write(body["source"] or "")
             print(generate_text(body), file=sys.stderr)
-        return 0
+        return 1 if body["source"] is None else 0
 
     found = report(files)
     if as_json:

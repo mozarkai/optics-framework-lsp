@@ -591,3 +591,29 @@ def test_an_element_in_a_value_param_is_its_first_value(target):
     source = generate(_suite(elements, **{"modules/modules.csv": VALUE_STEPS}), target)["source"]
     for line in EXPECTED[target]:
         assert line in source
+
+
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_a_name_used_only_as_a_value_is_not_vetted_as_a_locator(target):
+    """`.Main` reads as css and `logo.png` as an image, but as values they are only text."""
+    elements = BASE[target] + "act,.Main\npic,logo.png\n"
+    steps = "module_name,module_step,param_1,param_2\nOpen,Enter Text,${Btn},${act}\nOpen,Enter Text,${Btn},${pic}\n"
+    body = generate(_suite(elements, **{"modules/modules.csv": steps}), target)
+    assert body["source"] is not None and body["unsupported"] == []
+    assert TARGETS[target].literal(".Main") in body["source"]
+
+
+def test_a_refused_locator_blocks_only_the_step_that_uses_it_as_one():
+    elements = ANDROID + "pic,logo.png\n"
+    steps = "module_name,module_step,param_1,param_2\nOpen,Enter Text,${Btn},${pic}\nOpen,Press Element,${pic},\n"
+    body = generate(_suite(elements, **{"modules/modules.csv": steps}))
+    [needs] = [f for f in body["unsupported"] if f["code"] == "needs-unusable-element"]
+    assert needs["step"] == "Press Element"
+
+
+def test_a_value_is_the_raw_first_value_even_when_that_locator_is_refused():
+    elements = ANDROID + "both,logo.png\nboth,//android.widget.Image\n"
+    steps = "module_name,module_step,param_1,param_2\nOpen,Enter Text,${Btn},${both}\nOpen,Press Element,${both},\n"
+    source = generate(_suite(elements, **{"modules/modules.csv": steps}))["source"]
+    assert "set_text('logo.png')" in source
+    assert "'both': ['//android.widget.Image']" in source

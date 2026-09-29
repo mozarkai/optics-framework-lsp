@@ -17,6 +17,7 @@ import yaml
 
 from .. import keywords as catalog
 from ..parser import parse_sources
+from ..validation import undefined
 from ..parser.ast import AST, Block
 from .locators import normalise
 from .targets import TARGETS
@@ -33,10 +34,11 @@ def generate(files: list[tuple[str, str]], target: str = DEFAULT_TARGET) -> dict
     findings: list[dict] = []
 
     elements, unusable, values = _elements(ast, backend, findings)
+    missing = undefined(ast)
     modules = {block.name: block for block in ast.modules}
     ids = dict(zip(modules, _unique(modules, backend, set(backend.RESERVED))))
     bodies = [
-        (block.name, ids[block.name], _body(block, modules, ids, elements, unusable, values, backend, findings))
+        (block.name, ids[block.name], _body(block, modules, ids, elements, unusable, values, missing, backend, findings))
         for block in modules.values()
     ]
     cases = [
@@ -46,7 +48,7 @@ def generate(files: list[tuple[str, str]], target: str = DEFAULT_TARGET) -> dict
 
     # A script missing the steps that touch an element would pass while testing less than
     # the suite does, so none is written. An element nothing uses does not stop it.
-    refused = any(f["code"] == "needs-unusable-element" for f in findings)
+    refused = any(f["code"] in ("needs-unusable-element", "undefined-reference") for f in findings)
     return {
         "target": target,
         "extension": backend.EXTENSION,
@@ -198,15 +200,15 @@ def _param(raw: str | None, name: str, elements: dict[str, list[str]], values: d
 
 
 def _body(
-    block: Block, modules: dict[str, Block], ids, elements, unusable, values, backend, findings
+    block: Block, modules: dict[str, Block], ids, elements, unusable, values, missing, backend, findings
 ) -> list[str]:
     lines: list[str] = []
     for step in block.steps:
-        lines += _step(step, block.uri, modules, ids, elements, unusable, values, backend, findings)
+        lines += _step(step, block.uri, modules, ids, elements, unusable, values, missing, backend, findings)
     return lines
 
 
-def _step(step, uri, modules, ids, elements, unusable, values, backend, findings) -> list[str]:
+def _step(step, uri, modules, ids, elements, unusable, values, missing, backend, findings) -> list[str]:
     """One step as lines in the target's language, or nothing plus a finding saying why."""
     raw = (step.step_name or "").strip()
     keyword = raw.lower()
@@ -247,6 +249,16 @@ def _step(step, uri, modules, ids, elements, unusable, values, backend, findings
         finding["step"] = raw
         finding["elements"] = blocked
         findings.append(finding)
+        return []
+
+    unknown = [ref for _, ref in _refs(step) if ref in missing]
+    if unknown:
+        findings.append(
+            _finding(
+                uri, step.row, "undefined-reference",
+                f"'{raw}' reads {', '.join(unknown)}, which is not a defined element or variable",
+            )
+        )
         return []
 
     arity, emit = backend.EMIT[keyword]
@@ -306,10 +318,16 @@ def as_text(body: dict) -> str:
     blocking = [f for f in findings if f["code"] == "unusable-locator" and f["element"] in needed]
     steps = sum(len(v) for v in needed.values())
 
-    out = [
-        f"error: no script written. {len(blocking)} element(s) have no locator the "
-        f"{body['target']} target can use, and {steps} step(s) need them.",
-    ]
+    undefined_refs = [f for f in findings if f["code"] == "undefined-reference"]
+    out = ["error: no script written."]
+    if blocking:
+        out[0] += (
+            f" {len(blocking)} element(s) have no locator the "
+            f"{body['target']} target can use, and {steps} step(s) need them."
+        )
+    if undefined_refs:
+        out[0] += f" {len(undefined_refs)} step(s) read a name nothing defines."
+        out += [f"  {line(f)}" for f in undefined_refs]
     for f in blocking:
         out += ["", f"  {f['element']}  ({f['uri']}:{f['row']})"]
         width = max(len("needed by"), *(len(text) for text, _ in f["locators"]))
@@ -320,10 +338,10 @@ def as_text(body: dict) -> str:
         ]
     out += [
         "",
-        "Give each an xpath, text or class locator (a fallback on another row is enough), "
+        "Define each name read, and give each unusable element an xpath, text or class locator (a fallback on another row is enough), "
         "or remove the steps that use it.",
     ]
-    rest = [f for f in findings if f not in blocking and f["code"] != "needs-unusable-element"]
+    rest = [f for f in findings if f not in blocking and f["code"] not in ("needs-unusable-element", "undefined-reference")]
     if rest:
         out += ["", "Also not translatable, though these alone would not have stopped the script:"]
         out += [f"  {line(f)}" for f in rest]

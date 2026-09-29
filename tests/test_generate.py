@@ -98,7 +98,11 @@ def test_a_clean_suite_reports_nothing():
 
 
 def test_a_variable_reference_reads_the_variable_store():
-    modules = "module_name,module_step,param_1,param_2\nOpen,Enter Text,${Btn},${user}\n"
+    modules = (
+        "module_name,module_step,param_1,param_2\n"
+        "Open,Read Data,user,users.csv\n"
+        "Open,Enter Text,${Btn},${user}\n"
+    )
     source = generate(_suite(**{"modules/modules.csv": modules}))["source"]
     assert "_find(d, ELEMENTS['Btn']).set_text(VARS['user'])" in source
 
@@ -473,18 +477,18 @@ def test_an_element_with_only_unsupported_locators_is_still_unusable(target):
 
 
 def test_every_supported_locator_travels_in_the_suites_order():
-    elements = "Element_Name,Element_ID,Element_ID_2\nBtn,//android.widget.Button,Go\n"
+    elements = "Element_Name,Element_ID,Element_ID_2\nBtn,//android.widget.Button,Go\nLabel,Sign in,\n"
     source = generate(_suite(elements), "uiautomator2")["source"]
     assert "'Btn': ['//android.widget.Button', 'Go']," in source
     ast.parse(source)
-    elements = "Element_Name,Element_ID,Element_ID_2\nBtn,//XCUIElementTypeButton,Go\n"
+    elements = "Element_Name,Element_ID,Element_ID_2\nBtn,//XCUIElementTypeButton,Go\nLabel,Sign in,\n"
     source = generate(_suite(elements), "xcuitest")["source"]
     assert '"Btn": ["//XCUIElementTypeButton", "Go"],' in source
 
 
 def test_a_name_on_two_rows_is_one_element_with_both_locators():
     """`read_elements` extends a name's list per row rather than keeping the first."""
-    elements = "Element_Name,Element_ID\nBtn,//android.widget.Button\nBtn,Go\n"
+    elements = "Element_Name,Element_ID\nBtn,//android.widget.Button\nBtn,Go\nLabel,Sign in\n"
     source = generate(_suite(elements), "uiautomator2")["source"]
     assert "'Btn': ['//android.widget.Button', 'Go']," in source
 
@@ -766,3 +770,26 @@ def test_an_env_config_value_is_read_from_the_environment_at_run_time(monkeypatc
     scope: dict = {}
     exec("import os\n" + "\n".join(constants), scope)
     assert (scope["SERIAL"], scope["PACKAGE"]) == ("abc123", "com.example.app")
+
+
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_an_undefined_reference_is_reported_and_no_script_is_written(target):
+    modules = MODULES + "Open,Enter Text,${Btn},${nobody}\n"
+    body = generate(_suite(BASE[target], **{"modules/modules.csv": modules}), target)
+    assert body["source"] is None
+    [finding] = [f for f in body["unsupported"] if f["code"] == "undefined-reference"]
+    assert (finding["uri"], finding["row"]) == ("modules/modules.csv", 5)
+    assert "nobody" in finding["message"]
+    assert "nobody" in as_text(body).splitlines()[1]
+
+
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_a_name_bound_at_run_time_or_defined_is_not_an_undefined_reference(target):
+    modules = MODULES + (
+        "Open,Read Data,user,users.csv\n"
+        "Open,Enter Text,${Btn},${user}\n"
+        "Open,Enter Text,${Btn},${Label}\n"
+    )
+    body = generate(_suite(BASE[target], **{"modules/modules.csv": modules}), target)
+    assert body["source"] is not None
+    assert not [f for f in body["unsupported"] if f["code"] == "undefined-reference"]

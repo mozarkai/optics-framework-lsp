@@ -569,3 +569,25 @@ def test_the_ios_target_splits_the_cell_and_honours_the_rule():
     found = generate(_suite(IOS, **{"modules/modules.csv": modules}), "xcuitest")
     assert 'waitForAll("Login|Welcome", Double("10") ?? 30, "all")' in found["source"]
     assert "params-dropped" not in [f["code"] for f in found["unsupported"]]
+
+
+VALUE_STEPS = (
+    "module_name,module_step,param_1,param_2\n"
+    "Open,Enter Text,${Btn},${user}\n"
+    "Open,Sleep,${five},\n"
+)
+
+
+EXPECTED = {
+    "uiautomator2": ["_find(d, ELEMENTS['Btn']).set_text('alex')", "time.sleep(float('5'))"],
+    "xcuitest": ['typeInto("Btn", "alex")', 'Thread.sleep(forTimeInterval: Double("5") ?? 0)'],
+}
+
+
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_an_element_in_a_value_param_is_its_first_value(target):
+    """optics loads variables as elements, so `${user}` here is a value, not a locator."""
+    elements = BASE[target] + "user,alex\nuser,other\nfive,5\n"
+    source = generate(_suite(elements, **{"modules/modules.csv": VALUE_STEPS}), target)["source"]
+    for line in EXPECTED[target]:
+        assert line in source

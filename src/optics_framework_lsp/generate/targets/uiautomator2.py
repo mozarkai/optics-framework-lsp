@@ -7,12 +7,13 @@
 
 from __future__ import annotations
 
+import keyword
 import re
 
 NAME = "uiautomator2"
 EXTENSION = ".py"
 # Names the script already uses; `d` is every function's device.
-RESERVED = {"main", "sys", "time", "u2", "d"}
+RESERVED = {"main", "sys", "time", "u2", "d"} | set(keyword.kwlist)
 
 from ..locators import REFUSED, kind
 

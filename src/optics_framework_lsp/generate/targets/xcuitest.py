@@ -58,6 +58,15 @@ def _swift_string(value: str) -> str:
     return f'"{escaped}"'
 
 
+# Lowercase only: func_name lowercases the head.
+_KEYWORDS = set(
+    "associatedtype as break case catch class continue default defer deinit do else enum extension "
+    "fallthrough false fileprivate for func guard if import in init inout internal is let nil open "
+    "operator private protocol public repeat rethrows return self static struct subscript super "
+    "switch throw throws true try typealias var where while".split()
+)
+
+
 def func_name(text: str) -> str:
     """A block name as a swift identifier, lowerCamelCase."""
     parts = [part for part in re.split(r"[^0-9a-zA-Z]+", text.strip()) if part]
@@ -686,7 +695,7 @@ _HELPERS = '''
 '''
 
 # Members of the generated class, so no module takes one's name.
-RESERVED = set(re.findall(r"\b(?:func|var|let) (\w+)", _PRELUDE + _RESOLVER + _HELPERS))
+RESERVED = set(re.findall(r"\b(?:func|var|let) (\w+)", _PRELUDE + _RESOLVER + _HELPERS)) | _KEYWORDS
 
 
 def render(config: dict, elements: dict[str, list[str]], modules: list, cases: list) -> str:

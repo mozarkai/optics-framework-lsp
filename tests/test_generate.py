@@ -617,3 +617,40 @@ def test_a_value_is_the_raw_first_value_even_when_that_locator_is_refused():
     source = generate(_suite(elements, **{"modules/modules.csv": steps}))["source"]
     assert "set_text('logo.png')" in source
     assert "'both': ['//android.widget.Image']" in source
+
+
+NAMED = "module_name,module_step,param_1,param_2,param_3\n"
+
+
+def test_a_named_param_fills_its_own_slot_and_leaves_the_rest_to_default():
+    steps = NAMED + "Open,Assert Presence,${Btn},rule=all,\n"
+    source = generate(_suite(ANDROID, **{"modules/modules.csv": steps}))["source"]
+    assert "assert _wait(d, _split(ELEMENTS['Btn']), 30, 'all')" in source
+
+
+def test_a_named_param_can_hold_a_reference():
+    steps = NAMED + "Open,Assert Presence,${Btn},timeout_str=${five},\n"
+    source = generate(_suite(ANDROID + "five,5\n", **{"modules/modules.csv": steps}))["source"]
+    assert "float('5')" in source
+
+
+def test_a_locator_holding_an_equals_sign_stays_positional():
+    """The runner treats a cell starting with `/` or `(` as positional, whatever it holds."""
+    elements = 'Element_Name,Element_ID\nBtn,"//android.widget.Button[@text=\'a\']"\n'
+    steps = NAMED + "Open,Press Element,//android.widget.Button[@text='a'],,\n"
+    body = generate(_suite(elements, **{"modules/modules.csv": steps}))
+    assert "invalid-param" not in [f["code"] for f in body["unsupported"]]
+
+
+def test_a_named_param_the_keyword_lacks_or_repeats_is_refused_as_optics_would():
+    steps = NAMED + "Open,Assert Presence,${Btn},nosuch=1,\nOpen,Assert Presence,${Btn},5,timeout_str=6\n"
+    body = generate(_suite(ANDROID, **{"modules/modules.csv": steps}))
+    messages = [f["message"] for f in body["unsupported"] if f["code"] == "invalid-param"]
+    assert any("has no param nosuch" in m for m in messages)
+    assert any("given timeout_str twice" in m for m in messages)
+
+
+def test_a_named_locator_param_is_vetted_as_a_locator():
+    steps = NAMED + "Open,Press Element,element=${pic},,\n"
+    body = generate(_suite(ANDROID + "pic,logo.png\n", **{"modules/modules.csv": steps}))
+    assert body["source"] is None

@@ -154,16 +154,22 @@ UNSUPPORTED: dict[str, str] = {
 # The helpers the emitted calls stand on, inlined so one generated file is the whole
 # deliverable. `_wait` polls every 200ms; optics' own locate retries on a ~1.8s interval,
 # which is where most of the wall-clock difference between the two lives.
+def _setting(value: str) -> str:
+    # App Studio exports `ENV:NAME` for values the device farm supplies at run time.
+    return f"os.environ[{value[4:]!r}]" if value.startswith("ENV:") else repr(value)
+
+
 _PRELUDE = '''\
+import os
 import sys
 import time
 from pathlib import Path
 
 import uiautomator2 as u2
 
-SERIAL = {serial!r}
-PACKAGE = {package!r}
-ACTIVITY = {activity!r}
+SERIAL = {serial}
+PACKAGE = {package}
+ACTIVITY = {activity}
 
 VARS = {{}}
 SOFT = []
@@ -364,9 +370,9 @@ def render(config: dict, elements: dict[str, list[str]], modules: list, cases: l
         "# the step fails.",
         "",
         _PRELUDE.format(
-            serial=config.get("serial", ""),
-            package=config.get("package", ""),
-            activity=config.get("activity", ""),
+            serial=_setting(config.get("serial", "")),
+            package=_setting(config.get("package", "")),
+            activity=_setting(config.get("activity", "")),
         ),
         "",
         "ELEMENTS = {",

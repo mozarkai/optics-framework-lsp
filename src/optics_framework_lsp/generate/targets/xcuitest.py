@@ -152,7 +152,10 @@ def _num(p: list[str], i: int, fallback: int) -> str:
 
 EMIT: dict[str, tuple[int, object]] = {
     # lifecycle
-    "launch app": (0, _one("app.launch()")),
+    # app_activity has no iOS meaning; later steps drive the app just launched
+    "launch app": (
+        2, lambda p: ([f"app = XCUIApplication(bundleIdentifier: {p[0]})"] if p and p[0] else []) + ["app.launch()"]
+    ),
     "launch other app": (1, _one("XCUIApplication(bundleIdentifier: {0}).activate()")),
     "close and terminate app": (0, _one("app.terminate()")),
     "force terminate app": (1, _one("app.terminate()")),

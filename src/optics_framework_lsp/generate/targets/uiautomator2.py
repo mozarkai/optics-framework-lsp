@@ -65,15 +65,21 @@ def _to(p: list[str], i: int) -> str:
     return f"float({p[i]})" if len(p) > i and p[i] else "30"
 
 
+def _or(p: list[str], i: int, fallback: str) -> str:
+    return p[i] if len(p) > i and p[i] else fallback
+
+
 def _rule(p: list[str], i: int) -> str:
-    return p[i] if len(p) > i and p[i] else "'any'"
+    return _or(p, i, "'any'")
 
 
 # keyword -> (how many params the translation reads, what it emits). Paired so a keyword
 # cannot have an arity and no emitter, or the reverse.
 EMIT: dict[str, tuple[int, object]] = {
     # lifecycle
-    "launch app": (0, _one("d.app_start(PACKAGE, ACTIVITY, stop=True)")),
+    "launch app": (
+        2, lambda p: [f"d.app_start({_or(p, 0, 'PACKAGE')}, {_or(p, 1, 'ACTIVITY')}, stop=True)"]
+    ),
     "launch other app": (1, _one("d.app_start({0})")),
     "close and terminate app": (0, _one("d.app_stop(PACKAGE)")),
     "force terminate app": (1, _one("d.app_stop({0})")),

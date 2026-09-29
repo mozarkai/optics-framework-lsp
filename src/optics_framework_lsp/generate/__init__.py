@@ -31,10 +31,10 @@ def generate(files: list[tuple[str, str]], target: str = DEFAULT_TARGET) -> dict
     ast = parse_sources(files)
     findings: list[dict] = []
 
-    elements, unusable = _elements(ast, backend, findings)
+    elements, unusable, values = _elements(ast, backend, findings)
     modules = {block.name: block for block in ast.modules}
     bodies = [
-        (block.name, _body(block, modules, elements, unusable, backend, findings))
+        (block.name, _body(block, modules, elements, unusable, values, backend, findings))
         for block in modules.values()
     ]
     cases = [(block.name, _case(block, modules, backend, findings)) for block in ast.test_cases]
@@ -74,7 +74,7 @@ def _config(files: list[tuple[str, str]]) -> dict:
     return {}
 
 
-def _elements(ast: AST, backend, findings: list[dict]) -> tuple[dict[str, list[str]], set[str]]:
+def _elements(ast: AST, backend, findings: list[dict]) -> tuple[dict[str, list[str]], set[str], dict[str, str]]:
     """Name to every locator the target can carry, in the order `resolve_with_fallback`
     tries them. One the target cannot express is dropped and reported; an element left with
     none is returned as unusable, so the steps that use it are reported too rather than
@@ -84,12 +84,21 @@ def _elements(ast: AST, backend, findings: list[dict]) -> tuple[dict[str, list[s
     for element in ast.elements:
         rows.setdefault(element.name, []).append(element)
 
+    # A name used only as a value is text, not a locator, so it isn't vetted.
+    refs = [r for block in ast.modules for step in block.steps for r in _refs(step)]
+    used = {ref for _, ref in refs}
+    as_locator = {ref for name, ref in refs if name in _LOCATOR_PARAMS}
+
     elements: dict[str, list[str]] = {}
     unusable: set[str] = set()
+    values: dict[str, str] = {}
     for name, group in rows.items():
         element = group[0]
         cells = [(row.uri, cell) for row in group for cell in row.locators]
         if not cells:
+            continue
+        values[name] = cells[0][1].text
+        if name in used and name not in as_locator:
             continue
         kept, dropped = [], []
         for uri, cell in cells:
@@ -120,7 +129,7 @@ def _elements(ast: AST, backend, findings: list[dict]) -> tuple[dict[str, list[s
                 )
             )
         elements[name] = kept
-    return elements, unusable
+    return elements, unusable, values
 
 
 _REFERENCE = re.compile(r"\$\{([^}]+)\}")
@@ -129,29 +138,36 @@ _REFERENCE = re.compile(r"\$\{([^}]+)\}")
 _LOCATOR_PARAMS = {"element", "elements"}
 
 
-def _param(raw: str, name: str, elements: dict[str, list[str]], backend) -> str:
+def _refs(step):
+    """Whole-cell refs only: the runner resolves no other."""
+    names = catalog.KEYWORDS.get((step.step_name or "").strip().lower(), {}).get("params", [])
+    for i, param in enumerate(step.params):
+        match = _REFERENCE.fullmatch(param.strip())
+        if match:
+            yield (names[i] if i < len(names) else ""), match.group(1)
+
+
+def _param(raw: str, name: str, elements: dict[str, list[str]], values: dict[str, str], backend) -> str:
     """A value param takes an element's first value, as `resolve_scalar_param` does."""
     match = _REFERENCE.fullmatch(raw.strip())
     if not match:
         return backend.literal(raw)
     key = match.group(1)
-    if key not in elements:
-        return backend.var_ref(key)
     if name in _LOCATOR_PARAMS:
-        return backend.element_ref(key)
-    return backend.literal(elements[key][0])
+        return backend.element_ref(key) if key in elements else backend.var_ref(key)
+    return backend.literal(values[key]) if key in values else backend.var_ref(key)
 
 
 def _body(
-    block: Block, modules: dict[str, Block], elements, unusable, backend, findings
+    block: Block, modules: dict[str, Block], elements, unusable, values, backend, findings
 ) -> list[str]:
     lines: list[str] = []
     for step in block.steps:
-        lines += _step(step, block.uri, modules, elements, unusable, backend, findings)
+        lines += _step(step, block.uri, modules, elements, unusable, values, backend, findings)
     return lines
 
 
-def _step(step, uri, modules, elements, unusable, backend, findings) -> list[str]:
+def _step(step, uri, modules, elements, unusable, values, backend, findings) -> list[str]:
     """One step as lines in the target's language, or nothing plus a finding saying why."""
     raw = (step.step_name or "").strip()
     keyword = raw.lower()
@@ -173,13 +189,7 @@ def _step(step, uri, modules, elements, unusable, backend, findings) -> list[str
         )
         return []
 
-    # A whole cell only, as the runner resolves one: `${a}|${b}` is a literal there too.
-    blocked = [
-        match.group(1)
-        for param in step.params
-        for match in [_REFERENCE.fullmatch(param.strip())]
-        if match and match.group(1) in unusable
-    ]
+    blocked = [ref for name, ref in _refs(step) if name in _LOCATOR_PARAMS and ref in unusable]
     if blocked:
         finding = _finding(
             uri, step.row, "needs-unusable-element",
@@ -193,7 +203,7 @@ def _step(step, uri, modules, elements, unusable, backend, findings) -> list[str
     arity, emit = backend.EMIT[keyword]
     names = catalog.KEYWORDS[keyword]["params"]
     params = [
-        _param(param, names[i] if i < len(names) else "", elements, backend)
+        _param(param, names[i] if i < len(names) else "", elements, values, backend)
         for i, param in enumerate(step.params)
     ]
     if len(params) > arity:

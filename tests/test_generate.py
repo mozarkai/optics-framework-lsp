@@ -754,3 +754,15 @@ def test_launch_app_on_ios_without_a_bundle_launches_the_default_app():
     source = _launch("xcuitest", ",")["source"]
     assert "bundleIdentifier" not in source.split("func open")[1].split("func ")[0]
     assert "app.launch()" in source
+
+
+def test_an_env_config_value_is_read_from_the_environment_at_run_time(monkeypatch):
+    config = CONFIG.replace("emulator-5554", "ENV:DEVICE_SERIAL_ID")
+    source = generate(_suite(**{"config.yaml": config}))["source"]
+    assert "SERIAL = os.environ['DEVICE_SERIAL_ID']" in source
+    assert "PACKAGE = 'com.example.app'" in source
+    constants = [line for line in source.splitlines() if line.startswith(("SERIAL =", "PACKAGE ="))]
+    monkeypatch.setenv("DEVICE_SERIAL_ID", "abc123")
+    scope: dict = {}
+    exec("import os\n" + "\n".join(constants), scope)
+    assert (scope["SERIAL"], scope["PACKAGE"]) == ("abc123", "com.example.app")

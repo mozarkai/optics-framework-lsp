@@ -138,17 +138,40 @@ _REFERENCE = re.compile(r"\$\{([^}]+)\}")
 _LOCATOR_PARAMS = {"element", "elements"}
 
 
+_NAMED = re.compile(r"(?<![=!<>])=(?!=)")
+
+
+def _slots(step) -> tuple[list[tuple[str, str | None]], list[str]]:
+    """Mirrors the runner's `method(*positional, **named)`; an unfilled slot is None so the
+    target's default applies."""
+    names = catalog.KEYWORDS.get((step.step_name or "").strip().lower(), {}).get("params", [])
+    cells = [param.strip() for param in step.params]
+    named = [c for c in cells if not c.startswith(("/", "(")) and _NAMED.search(c)]
+    filled = dict(enumerate(c for c in cells if c not in named))
+    rejected: list[str] = []
+    for key, value in (map(str.strip, c.split("=", 1)) for c in named):
+        if key not in names:
+            rejected.append(f"has no param {key}")
+        elif names.index(key) in filled:
+            rejected.append(f"is given {key} twice")
+        else:
+            filled[names.index(key)] = value
+    size = max(filled, default=-1) + 1
+    return [(names[i] if i < len(names) else "", filled.get(i)) for i in range(size)], rejected
+
+
 def _refs(step):
     """Whole-cell refs only: the runner resolves no other."""
-    names = catalog.KEYWORDS.get((step.step_name or "").strip().lower(), {}).get("params", [])
-    for i, param in enumerate(step.params):
-        match = _REFERENCE.fullmatch(param.strip())
+    for name, cell in _slots(step)[0]:
+        match = cell and _REFERENCE.fullmatch(cell)
         if match:
-            yield (names[i] if i < len(names) else ""), match.group(1)
+            yield name, match.group(1)
 
 
-def _param(raw: str, name: str, elements: dict[str, list[str]], values: dict[str, str], backend) -> str:
+def _param(raw: str | None, name: str, elements: dict[str, list[str]], values: dict[str, str], backend) -> str:
     """A value param takes an element's first value, as `resolve_scalar_param` does."""
+    if raw is None:
+        return ""
     match = _REFERENCE.fullmatch(raw.strip())
     if not match:
         return backend.literal(raw)
@@ -189,6 +212,16 @@ def _step(step, uri, modules, elements, unusable, values, backend, findings) -> 
         )
         return []
 
+    slots, rejected = _slots(step)
+    if rejected:
+        findings.append(
+            _finding(
+                uri, step.row, "invalid-param",
+                f"'{raw}' {'; '.join(rejected)}, which optics rejects",
+            )
+        )
+        return []
+
     blocked = [ref for name, ref in _refs(step) if name in _LOCATOR_PARAMS and ref in unusable]
     if blocked:
         finding = _finding(
@@ -201,17 +234,13 @@ def _step(step, uri, modules, elements, unusable, values, backend, findings) -> 
         return []
 
     arity, emit = backend.EMIT[keyword]
-    names = catalog.KEYWORDS[keyword]["params"]
-    params = [
-        _param(param, names[i] if i < len(names) else "", elements, values, backend)
-        for i, param in enumerate(step.params)
-    ]
-    if len(params) > arity:
-        dropped = ", ".join(names[arity : len(params)])
+    params = [_param(cell, name, elements, values, backend) for name, cell in slots]
+    dropped = ", ".join(name or "a trailing param" for name, cell in slots[arity:] if cell is not None)
+    if dropped:
         findings.append(
             _finding(
                 uri, step.row, "params-dropped",
-                f"'{raw}' translated without {dropped or 'its trailing params'}",
+                f"'{raw}' translated without {dropped}",
             )
         )
     try:

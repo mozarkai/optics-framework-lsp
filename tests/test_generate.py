@@ -321,11 +321,12 @@ def _ios_toolchain():
 
 
 @pytest.mark.skipif(_ios_toolchain() is None, reason="needs Xcode and the iOS simulator SDK")
-@pytest.mark.parametrize("colliding", [False, True])
-def test_the_generated_swift_typechecks_against_the_ios_sdk(tmp_path, colliding):
+@pytest.mark.parametrize("suite", ["plain", "colliding", "keywords"])
+def test_the_generated_swift_typechecks_against_the_ios_sdk(tmp_path, suite):
     sdk, developer = _ios_toolchain()
     swift = tmp_path / "Generated.swift"
-    swift.write_text(generate(_colliding(IOS) if colliding else _suite(IOS), "xcuitest")["source"])
+    files = {"plain": _suite, "colliding": _colliding, "keywords": _keyword_suite}[suite](IOS)
+    swift.write_text(generate(files, "xcuitest")["source"])
     done = subprocess.run(
         ["xcrun", "swiftc", "-typecheck", "-sdk", sdk,
          "-target", "arm64-apple-ios17.0-simulator",
@@ -707,3 +708,18 @@ def test_a_test_case_name_written_in_two_files_is_two_tests():
     again = {"test_cases/more.csv": "test_case,test_step\nSign In,Open\n"}
     functions = _functions(generate(_suite(**again))["source"])
     assert {"test_sign_in", "test_sign_in_2"} <= set(functions)
+
+
+def _keyword_suite(elements: str = ANDROID):
+    modules = MODULES + "".join(f"{name},Launch App,,\n" for name in ("Return", "If", "class"))
+    cases = CASES + "".join(f"{name},{name}\n" for name in ("Return", "If", "class"))
+    return _suite(elements, **{"modules/modules.csv": modules, "test_cases/test_cases.csv": cases})
+
+
+def test_a_module_named_after_a_python_keyword_still_compiles():
+    compile(generate(_keyword_suite(), "uiautomator2")["source"], "generated.py", "exec")
+
+
+def test_a_module_named_after_a_swift_keyword_is_not_given_the_keyword():
+    source = generate(_keyword_suite(IOS), "xcuitest")["source"]
+    assert "func return(" not in source and "func if(" not in source and "func class(" not in source

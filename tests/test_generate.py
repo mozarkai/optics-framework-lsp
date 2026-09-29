@@ -321,11 +321,11 @@ def _ios_toolchain():
 
 
 @pytest.mark.skipif(_ios_toolchain() is None, reason="needs Xcode and the iOS simulator SDK")
-@pytest.mark.parametrize("suite", ["plain", "colliding", "keywords"])
+@pytest.mark.parametrize("suite", ["plain", "colliding", "keywords", "launch"])
 def test_the_generated_swift_typechecks_against_the_ios_sdk(tmp_path, suite):
     sdk, developer = _ios_toolchain()
     swift = tmp_path / "Generated.swift"
-    files = {"plain": _suite, "colliding": _colliding, "keywords": _keyword_suite}[suite](IOS)
+    files = {"plain": _suite, "colliding": _colliding, "keywords": _keyword_suite, "launch": _launch_suite}[suite](IOS)
     swift.write_text(generate(files, "xcuitest")["source"])
     done = subprocess.run(
         ["xcrun", "swiftc", "-typecheck", "-sdk", sdk,
@@ -723,3 +723,34 @@ def test_a_module_named_after_a_python_keyword_still_compiles():
 def test_a_module_named_after_a_swift_keyword_is_not_given_the_keyword():
     source = generate(_keyword_suite(IOS), "xcuitest")["source"]
     assert "func return(" not in source and "func if(" not in source and "func class(" not in source
+
+
+def _launch_suite(elements: str = ANDROID, cells: str = "com.example.other,"):
+    return _suite(elements, **{"modules/modules.csv": NAMED + f"Open,Launch App,{cells},\n"})
+
+
+def _launch(target: str, cells: str):
+    return generate(_launch_suite(IOS if target == "xcuitest" else ANDROID, cells), target)
+
+
+def test_launch_app_starts_the_package_and_activity_the_step_names():
+    body = _launch("uiautomator2", "com.other,com.other.Main")
+    assert "d.app_start('com.other', 'com.other.Main', stop=True)" in body["source"]
+    assert "params-dropped" not in [f["code"] for f in body["unsupported"]]
+
+
+def test_launch_app_falls_back_to_the_configured_app_for_what_the_step_leaves_out():
+    assert "d.app_start(PACKAGE, ACTIVITY, stop=True)" in _launch("uiautomator2", ",")["source"]
+    assert "d.app_start('com.other', ACTIVITY, stop=True)" in _launch("uiautomator2", "com.other,")["source"]
+
+
+def test_launch_app_on_ios_launches_the_named_bundle_and_drives_it_afterwards():
+    body = _launch("xcuitest", "com.other,com.other.Main")
+    assert 'app = XCUIApplication(bundleIdentifier: "com.other")\n        app.launch()' in body["source"]
+    assert "params-dropped" not in [f["code"] for f in body["unsupported"]]
+
+
+def test_launch_app_on_ios_without_a_bundle_launches_the_default_app():
+    source = _launch("xcuitest", ",")["source"]
+    assert "bundleIdentifier" not in source.split("func open")[1].split("func ")[0]
+    assert "app.launch()" in source

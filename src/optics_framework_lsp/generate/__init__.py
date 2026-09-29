@@ -125,15 +125,21 @@ def _elements(ast: AST, backend, findings: list[dict]) -> tuple[dict[str, list[s
 
 _REFERENCE = re.compile(r"\$\{([^}]+)\}")
 
+# optics loads variables as elements, so outside these a `${name}` is a value.
+_LOCATOR_PARAMS = {"element", "elements"}
 
-def _param(raw: str, elements: dict[str, list[str]], backend) -> str:
-    """One param as an expression in the target's language: an element, a variable, or a
-    literal."""
+
+def _param(raw: str, name: str, elements: dict[str, list[str]], backend) -> str:
+    """A value param takes an element's first value, as `resolve_scalar_param` does."""
     match = _REFERENCE.fullmatch(raw.strip())
     if not match:
         return backend.literal(raw)
     key = match.group(1)
-    return backend.element_ref(key) if key in elements else backend.var_ref(key)
+    if key not in elements:
+        return backend.var_ref(key)
+    if name in _LOCATOR_PARAMS:
+        return backend.element_ref(key)
+    return backend.literal(elements[key][0])
 
 
 def _body(
@@ -185,9 +191,13 @@ def _step(step, uri, modules, elements, unusable, backend, findings) -> list[str
         return []
 
     arity, emit = backend.EMIT[keyword]
-    params = [_param(param, elements, backend) for param in step.params]
+    names = catalog.KEYWORDS[keyword]["params"]
+    params = [
+        _param(param, names[i] if i < len(names) else "", elements, backend)
+        for i, param in enumerate(step.params)
+    ]
     if len(params) > arity:
-        dropped = ", ".join(catalog.KEYWORDS[keyword]["params"][arity : len(params)])
+        dropped = ", ".join(names[arity : len(params)])
         findings.append(
             _finding(
                 uri, step.row, "params-dropped",

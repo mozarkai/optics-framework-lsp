@@ -321,10 +321,11 @@ def _ios_toolchain():
 
 
 @pytest.mark.skipif(_ios_toolchain() is None, reason="needs Xcode and the iOS simulator SDK")
-def test_the_generated_swift_typechecks_against_the_ios_sdk(tmp_path):
+@pytest.mark.parametrize("colliding", [False, True])
+def test_the_generated_swift_typechecks_against_the_ios_sdk(tmp_path, colliding):
     sdk, developer = _ios_toolchain()
     swift = tmp_path / "Generated.swift"
-    swift.write_text(generate(_suite(IOS), "xcuitest")["source"])
+    swift.write_text(generate(_colliding(IOS) if colliding else _suite(IOS), "xcuitest")["source"])
     done = subprocess.run(
         ["xcrun", "swiftc", "-typecheck", "-sdk", sdk,
          "-target", "arm64-apple-ios17.0-simulator",
@@ -654,3 +655,55 @@ def test_a_named_locator_param_is_vetted_as_a_locator():
     steps = NAMED + "Open,Press Element,element=${pic},,\n"
     body = generate(_suite(ANDROID + "pic,logo.png\n", **{"modules/modules.csv": steps}))
     assert body["source"] is None
+
+
+COLLIDING = (
+    "module_name,module_step,param_1\n"
+    "Click on Yes Button,Press Element,${Btn}\n"
+    "Click On Yes Button!,Assert Presence,${Label}\n"
+    "Main,Launch App,\n"
+    "el,Close And Terminate App,\n"
+    "Both,Click on Yes Button,\n"
+    "Both,Click On Yes Button!,\n"
+)
+
+
+def _colliding(elements: str = ANDROID):
+    cases = "test_case,test_step\nSign In,Both\nSign in!,Main\nSign in!,el\n"
+    return _suite(elements, **{"modules/modules.csv": COLLIDING, "test_cases/test_cases.csv": cases})
+
+
+def _functions(source: str) -> dict[str, str]:
+    tree = ast.parse(source)
+    return {f.name: ast.get_source_segment(source, f) for f in tree.body if isinstance(f, ast.FunctionDef)}
+
+
+def test_names_that_map_to_one_identifier_each_keep_their_own_function():
+    source = generate(_colliding())["source"]
+    names = [f.name for f in ast.parse(source).body if isinstance(f, ast.FunctionDef)]
+    assert len(names) == len(set(names))
+    functions = _functions(source)
+    assert ".click()" in functions["click_on_yes_button"]
+    assert ".click()" not in functions["click_on_yes_button_2"]
+    assert "click_on_yes_button(d)\n    click_on_yes_button_2(d)" in functions["both"]
+    assert {"test_sign_in", "test_sign_in_2"} <= set(functions)
+
+
+def test_a_module_named_main_leaves_the_entry_point_alone():
+    functions = _functions(generate(_colliding())["source"])
+    assert "u2.connect" in functions["main"]
+    assert "main_2(d)" in functions["test_sign_in_2"]
+
+
+def test_swift_names_that_collide_get_their_own_methods():
+    source = generate(_colliding(IOS), "xcuitest")["source"]
+    assert "func clickOnYesButton() {" in source and "func clickOnYesButton_2() {" in source
+    assert "clickOnYesButton()\n        clickOnYesButton_2()" in source
+    assert "func el_2() {" in source and "el_2()" in source
+    assert "func testSignIn() {" in source and "func testSignIn_2() {" in source
+
+
+def test_a_test_case_name_written_in_two_files_is_two_tests():
+    again = {"test_cases/more.csv": "test_case,test_step\nSign In,Open\n"}
+    functions = _functions(generate(_suite(**again))["source"])
+    assert {"test_sign_in", "test_sign_in_2"} <= set(functions)

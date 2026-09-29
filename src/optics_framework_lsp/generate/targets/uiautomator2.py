@@ -11,6 +11,8 @@ import re
 
 NAME = "uiautomator2"
 EXTENSION = ".py"
+# Names the script already uses; `d` is every function's device.
+RESERVED = {"main", "sys", "time", "u2", "d"}
 
 from ..locators import REFUSED, kind
 
@@ -368,13 +370,13 @@ def render(config: dict, elements: dict[str, list[str]], modules: list, cases: l
         "# Modules",
         "",
     ]
-    for name, body in modules:
-        out += [f"def {func_name(name)}(d):", f"    {name!r}"]
+    for name, ident, body in modules:
+        out += [f"def {ident}(d):", f"    {name!r}"]
         out += [f"    {line}" for line in body] or ["    pass"]
         out += [""]
     out += ["# Test cases", ""]
-    for name, body in cases:
-        out += [f"def test_{func_name(name)}(d):", f"    {name!r}"]
+    for name, ident, body in cases:
+        out += [f"def test_{ident}(d):", f"    {name!r}"]
         out += [f"    {line}" for line in body] or ["    pass"]
         out += [""]
     return "\n".join(out) + _MAIN

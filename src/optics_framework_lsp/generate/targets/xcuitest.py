@@ -685,6 +685,10 @@ _HELPERS = '''
     }
 '''
 
+# Members of the generated class, so no module takes one's name.
+RESERVED = set(re.findall(r"\b(?:func|var|let) (\w+)", _PRELUDE + _RESOLVER + _HELPERS))
+
+
 def render(config: dict, elements: dict[str, list[str]], modules: list, cases: list) -> str:
     """One XCTestCase class: the locator table, the resolver, a method per module, a test
     per case."""
@@ -731,13 +735,13 @@ def render(config: dict, elements: dict[str, list[str]], modules: list, cases: l
     ]
 
     out += ["    // MARK: modules", ""]
-    for name, body in modules:
-        out += [f"    /// {name}", f"    func {func_name(name)}() {{"]
+    for name, ident, body in modules:
+        out += [f"    /// {name}", f"    func {ident}() {{"]
         out += [f"        {line}" for line in body]
         out += ["    }", ""]
     out += ["    // MARK: test cases", ""]
-    for name, body in cases:
-        out += [f"    /// {name}", f"    func test{func_name(name)[:1].upper()}{func_name(name)[1:]}() {{"]
+    for name, ident, body in cases:
+        out += [f"    /// {name}", f"    func test{ident[:1].upper()}{ident[1:]}() {{"]
         out += [f"        {line}" for line in body]
         out += ["    }", ""]
     out += ["}", ""]

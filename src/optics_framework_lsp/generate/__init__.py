@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import re
+from itertools import chain, count
 from pathlib import Path
 
 import yaml
@@ -33,11 +34,15 @@ def generate(files: list[tuple[str, str]], target: str = DEFAULT_TARGET) -> dict
 
     elements, unusable, values = _elements(ast, backend, findings)
     modules = {block.name: block for block in ast.modules}
+    ids = dict(zip(modules, _unique(modules, backend, set(backend.RESERVED))))
     bodies = [
-        (block.name, _body(block, modules, elements, unusable, values, backend, findings))
+        (block.name, ids[block.name], _body(block, modules, ids, elements, unusable, values, backend, findings))
         for block in modules.values()
     ]
-    cases = [(block.name, _case(block, modules, backend, findings)) for block in ast.test_cases]
+    cases = [
+        (block.name, ident, _case(block, modules, ids, backend, findings))
+        for block, ident in zip(ast.test_cases, _unique([b.name for b in ast.test_cases], backend, set()))
+    ]
 
     # A script missing the steps that touch an element would pass while testing less than
     # the suite does, so none is written. An element nothing uses does not stop it.
@@ -48,6 +53,17 @@ def generate(files: list[tuple[str, str]], target: str = DEFAULT_TARGET) -> dict
         "source": None if refused else backend.render(_config(files), elements, bodies, cases),
         "unsupported": sorted(findings, key=lambda f: (f["uri"], f["row"])),
     }
+
+
+def _unique(names, backend, taken: set[str]) -> list[str]:
+    """An identifier per name; names that map to the same one are suffixed in order."""
+    ids = []
+    for name in names:
+        base = backend.func_name(name)
+        ident = next(i for i in chain([base], (f"{base}_{n}" for n in count(2))) if i not in taken)
+        taken.add(ident)
+        ids.append(ident)
+    return ids
 
 
 def _finding(uri: str, row: int, code: str, message: str) -> dict:
@@ -182,15 +198,15 @@ def _param(raw: str | None, name: str, elements: dict[str, list[str]], values: d
 
 
 def _body(
-    block: Block, modules: dict[str, Block], elements, unusable, values, backend, findings
+    block: Block, modules: dict[str, Block], ids, elements, unusable, values, backend, findings
 ) -> list[str]:
     lines: list[str] = []
     for step in block.steps:
-        lines += _step(step, block.uri, modules, elements, unusable, values, backend, findings)
+        lines += _step(step, block.uri, modules, ids, elements, unusable, values, backend, findings)
     return lines
 
 
-def _step(step, uri, modules, elements, unusable, values, backend, findings) -> list[str]:
+def _step(step, uri, modules, ids, elements, unusable, values, backend, findings) -> list[str]:
     """One step as lines in the target's language, or nothing plus a finding saying why."""
     raw = (step.step_name or "").strip()
     keyword = raw.lower()
@@ -200,7 +216,7 @@ def _step(step, uri, modules, elements, unusable, values, backend, findings) -> 
     if keyword not in catalog.KEYWORDS:
         for name in modules:
             if name.strip().lower() == keyword:
-                return [_call(backend, name)]
+                return [_call(backend, ids[name])]
         findings.append(
             _finding(uri, step.row, "unknown-step", f"'{raw}' is neither a keyword nor a module")
         )
@@ -255,17 +271,18 @@ def _step(step, uri, modules, elements, unusable, values, backend, findings) -> 
         return []
 
 
-def _call(backend, name: str) -> str:
+def _call(backend, ident: str) -> str:
     """A module call, which is a function in python and a method in swift."""
-    return f"{backend.func_name(name)}(d)" if backend.NAME == "uiautomator2" else f"{backend.func_name(name)}()"
+    return f"{ident}(d)" if backend.NAME == "uiautomator2" else f"{ident}()"
 
 
-def _case(block: Block, modules: dict[str, Block], backend, findings) -> list[str]:
+def _case(block: Block, modules: dict[str, Block], ids, backend, findings) -> list[str]:
     lines = []
     for step in block.steps:
         name = (step.step_name or "").strip()
-        if any(name.lower() == module.strip().lower() for module in modules):
-            lines.append(_call(backend, name))
+        module = next((m for m in modules if name.lower() == m.strip().lower()), None)
+        if module is not None:
+            lines.append(_call(backend, ids[module]))
         else:
             findings.append(
                 _finding(block.uri, step.row, "unknown-module", f"'{name}' is not a module")

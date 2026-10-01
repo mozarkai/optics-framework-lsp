@@ -61,8 +61,8 @@ def _els(p: list[str]) -> str:
     return f"_split({p[0]})"
 
 
-def _to(p: list[str], i: int) -> str:
-    return f"float({p[i]})" if len(p) > i and p[i] else "30"
+def _to(p: list[str], i: int, fallback: str = "30") -> str:
+    return f"float({p[i]})" if len(p) > i and p[i] else fallback
 
 
 def _or(p: list[str], i: int, fallback: str) -> str:
@@ -120,11 +120,11 @@ EMIT: dict[str, tuple[int, object]] = {
     "assert visibility": (
         5, lambda p: [f"assert {_hard(p, f'_wait_visible(d, {_els(p)}, {_to(p, 1)}, {_rule(p, 2)})')}"]
     ),
-    "validate element": (2, lambda p: [f"_record(_wait(d, {_els(p)}, {_to(p, 1)}, 'any'))"]),
-    "validate screen": (
-        2,
-        lambda p: [f"_record(_wait(d, {_els(p)}, {_to(p, 1)}, 'any'))"],
+    # Unlike validate screen, optics raises here, and its defaults are 10 and all.
+    "validate element": (
+        3, lambda p: [f"assert _wait(d, {_els(p)}, {_to(p, 1, '10')}, {_or(p, 2, repr('all'))})"]
     ),
+    "validate screen": (3, lambda p: [f"_record(_wait(d, {_els(p)}, {_to(p, 1)}, {_rule(p, 2)}))"]),
     "is element": (3, lambda p: [f"_is(d, {p[0]}, {p[1]}, {_to(p, 2)})"]),
     "assert equality": (2, _one("assert {0} == {1}")),
     # movement

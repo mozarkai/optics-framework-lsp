@@ -141,8 +141,8 @@ def _one(call: str):
     return lambda p: [call.format(*p)]
 
 
-def _rule(p: list[str], i: int) -> str:
-    return p[i] if len(p) > i and p[i] else '"any"'
+def _rule(p: list[str], i: int, fallback: str = '"any"') -> str:
+    return p[i] if len(p) > i and p[i] else fallback
 
 
 def _hard(p: list[str], check: str) -> str:
@@ -193,8 +193,11 @@ EMIT: dict[str, tuple[int, object]] = {
     "assert visibility": (
         5, lambda p: [f"XCTAssertTrue({_hard(p, f'waitHittableAll({p[0]}, {_num(p, 1, 30)}, {_rule(p, 2)})')}, {p[0]})"]
     ),
-    "validate element": (2, lambda p: [f"soft.append(waitForAll({p[0]}, {_num(p, 1, 30)}, \"any\"))"]),
-    "validate screen": (2, lambda p: [f"soft.append(waitForAll({p[0]}, {_num(p, 1, 30)}, \"any\"))"]),
+    # Unlike validate screen, optics raises here, and its defaults are 10 and all.
+    "validate element": (
+        3, lambda p: [f"XCTAssertTrue(waitForAll({p[0]}, {_num(p, 1, 10)}, {_rule(p, 2, '"all"')}), {p[0]})"]
+    ),
+    "validate screen": (3, lambda p: [f"soft.append(waitForAll({p[0]}, {_num(p, 1, 30)}, {_rule(p, 2)}))"]),
     "is element": (3, lambda p: [f"_ = isElement({p[0]}, {p[1]}, {_num(p, 2, 30)})"]),
     "assert equality": (2, _one("XCTAssertEqual({0}, {1})")),
     # movement

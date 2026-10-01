@@ -150,6 +150,10 @@ def _hard(p: list[str], check: str) -> str:
     return f'{check} || {p[4]}.trimmingCharacters(in: .whitespaces).lowercased() == "false"' if len(p) > 4 and p[4] else check
 
 
+def _times(p: list[str], i: int, call: str) -> str:
+    return f"for _ in 0..<(Int({p[i]}) ?? 1) {{ {call} }}" if len(p) > i and p[i] else call
+
+
 def _num(p: list[str], i: int, fallback: int) -> str:
     """An optional numeric param, or the fallback when the suite left the cell empty."""
     return f"Double({p[i]}) ?? {fallback}" if len(p) > i and p[i] else str(fallback)
@@ -166,11 +170,13 @@ EMIT: dict[str, tuple[int, object]] = {
     "force terminate app": (1, _one("app.terminate()")),
     "quit": (0, _one("app.terminate()")),
     # pressing
-    "press element": (1, _one("el({0}).tap()")),
+    # Offsets apply only to OCR/image matches, which are refused here.
+    "press element": (5, lambda p: [_times(p, 1, f"elAt({p[0]}, {p[4]}).tap()" if len(p) > 4 and p[4] else f"el({p[0]}).tap()")]),
     "press element with index": (2, _one("elAt({0}, {1}).tap()")),
     "detect and press": (2, lambda p: [f"pressIfPresent({p[0]}, {_num(p, 1, 30)})"]),
-    "press by coordinates": (2, _one("tapAt({0}, {1})")),
-    "press by percentage": (2, _one("tapPercent({0}, {1})")),
+    # optics reads no repeat here.
+    "press by coordinates": (3, _one("tapAt({0}, {1})")),
+    "press by percentage": (3, lambda p: [_times(p, 2, f"tapPercent({p[0]}, {p[1]})")]),
     "press checkbox": (1, _one("el({0}).tap()")),
     "press radio button": (1, _one("el({0}).tap()")),
     # text

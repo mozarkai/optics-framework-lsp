@@ -78,6 +78,10 @@ def _hard(p: list[str], check: str) -> str:
     return f"{check} or str({p[4]}).strip().lower() == 'false'" if len(p) > 4 and p[4] else check
 
 
+def _times(p: list[str], i: int, call: str) -> str:
+    return f"for _ in range(int({p[i]})): {call}" if len(p) > i and p[i] else call
+
+
 # keyword -> (how many params the translation reads, what it emits). Paired so a keyword
 # cannot have an arity and no emitter, or the reverse.
 EMIT: dict[str, tuple[int, object]] = {
@@ -91,11 +95,13 @@ EMIT: dict[str, tuple[int, object]] = {
     "quit": (0, _one("d.app_stop(PACKAGE)")),
     "get app version": (1, _one('VARS["app_version"] = d.app_info({0})["versionName"]')),
     # pressing
-    "press element": (1, _one("_find(d, {0}).click()")),
+    # Offsets apply only to OCR/image matches, which are refused here.
+    "press element": (5, lambda p: [_times(p, 1, f"_at(d, {p[0]}, int({p[4]})).click()" if len(p) > 4 and p[4] else f"_find(d, {p[0]}).click()")]),
     "press element with index": (2, _one("_at(d, {0}, int({1})).click()")),
     "detect and press": (2, lambda p: [f"_press_if(d, {p[0]}, {_to(p, 1)})"]),
-    "press by coordinates": (2, _one("d.click(int({0}), int({1}))")),
-    "press by percentage": (2, _one("d.click(float({0}) / 100, float({1}) / 100)")),
+    # optics reads no repeat here.
+    "press by coordinates": (3, _one("d.click(int({0}), int({1}))")),
+    "press by percentage": (3, lambda p: [_times(p, 2, f"d.click(float({p[0]}) / 100, float({p[1]}) / 100)")]),
     "press checkbox": (1, _one("_find(d, {0}).click()")),
     "press radio button": (1, _one("_find(d, {0}).click()")),
     "press keycode": (1, _one("d.press(int({0}))")),

@@ -210,7 +210,9 @@ EMIT: dict[str, tuple[int, object]] = {
     "swipe by percentage": (4, lambda p: [f"swipePercent({p[0]}, {p[1]}, {p[2]}, {_num(p, 3, 200)})"]),
     # the one keyword iOS does better than Android, its name notwithstanding
     "swipe seekbar to right android": (1, _one("el({0}).adjust(toNormalizedSliderPosition: 1.0)")),
-    "select dropdown option": (3, _one("el({0}).adjust(toPickerWheelValue: {1})")),
+    "select dropdown option": (
+        3, lambda p: [f"XCTAssertTrue(waitFor({p[0]}, {_num(p, 2, 30)}), {p[0]})", f"el({p[0]}).adjust(toPickerWheelValue: {p[1]})"]
+    ),
     # everything else
     "sleep": (1, _one("Thread.sleep(forTimeInterval: Double({0}) ?? 0)")),
     "capture screenshot": (0, _one("attachScreenshot()")),

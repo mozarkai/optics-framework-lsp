@@ -136,7 +136,7 @@ EMIT: dict[str, tuple[int, object]] = {
     "swipe": (4, _one("_swipe_at(d, int({0}), int({1}), {2}, int({3}))")),
     "swipe by percentage": (4, _one("_swipe_pct(d, float({0}), float({1}), {2}, int({3}))")),
     "swipe seekbar to right android": (1, _one("_seekbar_right(d, {0})")),
-    "select dropdown option": (3, _one("_select(d, {0}, {1})")),
+    "select dropdown option": (3, lambda p: [f"_select(d, {p[0]}, {p[1]}, {_to(p, 2)})"]),
     # everything else
     "sleep": (1, _one("time.sleep(float({0}))")),
     "capture screenshot": (0, _one("d.screenshot(_shot_path())")),
@@ -332,8 +332,15 @@ def _seekbar_right(d, locator):
     d.drag(box["left"], cy, box["right"], cy)
 
 
-def _select(d, locator, option):
+def _select(d, locator, option, timeout):
     _find(d, locator).click()
+    deadline = time.time() + float(timeout)
+    while not d(text=option).exists:
+        # Assumes the open list is the last scrollable; optics diffs the screen.
+        lists = d.xpath('//*[@scrollable="true"]').all()
+        if time.time() >= deadline or not lists:
+            raise AssertionError("%r never appeared in the dropdown" % (option,))
+        lists[-1].swipe("up")
     d(text=option).click()
 
 

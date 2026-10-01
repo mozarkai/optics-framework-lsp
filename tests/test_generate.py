@@ -664,6 +664,18 @@ def test_fail_false_makes_an_assert_soft_and_event_name_is_still_reported(target
     assert "event_name" in dropped["message"]
 
 
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_validate_element_is_hard_with_optics_defaults_and_validate_screen_keeps_its_rule(target):
+    steps = NAMED + "Open,Validate Element,${Btn},,\nOpen,Validate Screen,${Btn},5,all\n"
+    body = generate(_suite(BASE[target], **{"modules/modules.csv": steps}), target)
+    assert body["unsupported"] == []
+    expected = {"uiautomator2": ["assert _wait(d, _split(ELEMENTS['Btn']), 10, 'all')",
+                                 "_record(_wait(d, _split(ELEMENTS['Btn']), float('5'), 'all'))"],
+                "xcuitest": ['XCTAssertTrue(waitForAll("Btn", 10, "all"), "Btn")',
+                             'soft.append(waitForAll("Btn", Double("5") ?? 30, "all"))']}[target]
+    assert all(line in body["source"] for line in expected)
+
+
 def test_a_locator_holding_an_equals_sign_stays_positional():
     """The runner treats a cell starting with `/` or `(` as positional, whatever it holds."""
     elements = 'Element_Name,Element_ID\nBtn,"//android.widget.Button[@text=\'a\']"\n'

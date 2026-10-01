@@ -640,6 +640,17 @@ def test_a_named_param_can_hold_a_reference():
     assert "float('5')" in source
 
 
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_fail_false_makes_an_assert_soft_and_event_name_is_still_reported(target):
+    steps = NAMED + "Open,Assert Presence,${Btn},fail=False,event_name=seen\nOpen,Assert Visibility,${Btn},,\n"
+    body = generate(_suite(BASE[target], **{"modules/modules.csv": steps}), target)
+    soft = {"uiautomator2": "or str('False').strip().lower() == 'false'",
+            "xcuitest": '|| "False".trimmingCharacters(in: .whitespaces).lowercased() == "false"'}[target]
+    assert body["source"].count(soft) == 1
+    [dropped] = [f for f in body["unsupported"] if f["code"] == "params-dropped"]
+    assert "event_name" in dropped["message"]
+
+
 def test_a_locator_holding_an_equals_sign_stays_positional():
     """The runner treats a cell starting with `/` or `(` as positional, whatever it holds."""
     elements = 'Element_Name,Element_ID\nBtn,"//android.widget.Button[@text=\'a\']"\n'

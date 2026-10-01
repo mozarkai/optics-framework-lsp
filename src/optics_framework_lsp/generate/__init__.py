@@ -263,7 +263,12 @@ def _step(step, uri, modules, ids, elements, unusable, values, missing, backend,
 
     arity, emit = backend.EMIT[keyword]
     params = [_param(cell, name, elements, values, backend) for name, cell in slots]
-    dropped = ", ".join(name or "a trailing param" for name, cell in slots[arity:] if cell is not None)
+    # Scripts have no event store, so event_name never translates.
+    dropped = ", ".join(
+        name or "a trailing param"
+        for i, (name, cell) in enumerate(slots)
+        if cell is not None and (i >= arity or name == "event_name")
+    )
     if dropped:
         findings.append(
             _finding(

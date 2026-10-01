@@ -73,6 +73,11 @@ def _rule(p: list[str], i: int) -> str:
     return _or(p, i, "'any'")
 
 
+def _hard(p: list[str], check: str) -> str:
+    """Reads `fail` the way optics' `_assert_common` does."""
+    return f"{check} or str({p[4]}).strip().lower() == 'false'" if len(p) > 4 and p[4] else check
+
+
 # keyword -> (how many params the translation reads, what it emits). Paired so a keyword
 # cannot have an arity and no emitter, or the reverse.
 EMIT: dict[str, tuple[int, object]] = {
@@ -103,10 +108,11 @@ EMIT: dict[str, tuple[int, object]] = {
     "clear element text": (1, _one('_find(d, {0}).set_text("")')),
     "get text": (1, _one('VARS["last_text"] = _find(d, {0}).get_text()')),
     # assertions
-    "assert presence": (3, lambda p: [f"assert _wait(d, {_els(p)}, {_to(p, 1)}, {_rule(p, 2)})"]),
+    "assert presence": (
+        5, lambda p: [f"assert {_hard(p, f'_wait(d, {_els(p)}, {_to(p, 1)}, {_rule(p, 2)})')}"]
+    ),
     "assert visibility": (
-        3,
-        lambda p: [f"assert _wait_visible(d, {_els(p)}, {_to(p, 1)}, {_rule(p, 2)})"],
+        5, lambda p: [f"assert {_hard(p, f'_wait_visible(d, {_els(p)}, {_to(p, 1)}, {_rule(p, 2)})')}"]
     ),
     "validate element": (2, lambda p: [f"_record(_wait(d, {_els(p)}, {_to(p, 1)}, 'any'))"]),
     "validate screen": (

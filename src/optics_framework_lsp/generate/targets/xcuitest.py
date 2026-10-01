@@ -145,6 +145,11 @@ def _rule(p: list[str], i: int) -> str:
     return p[i] if len(p) > i and p[i] else '"any"'
 
 
+def _hard(p: list[str], check: str) -> str:
+    """Reads `fail` the way optics' `_assert_common` does."""
+    return f'{check} || {p[4]}.trimmingCharacters(in: .whitespaces).lowercased() == "false"' if len(p) > 4 and p[4] else check
+
+
 def _num(p: list[str], i: int, fallback: int) -> str:
     """An optional numeric param, or the fallback when the suite left the cell empty."""
     return f"Double({p[i]}) ?? {fallback}" if len(p) > i and p[i] else str(fallback)
@@ -177,10 +182,10 @@ EMIT: dict[str, tuple[int, object]] = {
     "get text": (1, _one('vars["last_text"] = el({0}).label')),
     # assertions
     "assert presence": (
-        3, lambda p: [f"XCTAssertTrue(waitForAll({p[0]}, {_num(p, 1, 30)}, {_rule(p, 2)}), {p[0]})"]
+        5, lambda p: [f"XCTAssertTrue({_hard(p, f'waitForAll({p[0]}, {_num(p, 1, 30)}, {_rule(p, 2)})')}, {p[0]})"]
     ),
     "assert visibility": (
-        3, lambda p: [f"XCTAssertTrue(waitHittableAll({p[0]}, {_num(p, 1, 30)}, {_rule(p, 2)}), {p[0]})"]
+        5, lambda p: [f"XCTAssertTrue({_hard(p, f'waitHittableAll({p[0]}, {_num(p, 1, 30)}, {_rule(p, 2)})')}, {p[0]})"]
     ),
     "validate element": (2, lambda p: [f"soft.append(waitForAll({p[0]}, {_num(p, 1, 30)}, \"any\"))"]),
     "validate screen": (2, lambda p: [f"soft.append(waitForAll({p[0]}, {_num(p, 1, 30)}, \"any\"))"]),

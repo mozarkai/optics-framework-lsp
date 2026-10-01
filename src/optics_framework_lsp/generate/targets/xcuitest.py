@@ -202,10 +202,10 @@ EMIT: dict[str, tuple[int, object]] = {
     "assert equality": (2, _one("XCTAssertEqual({0}, {1})")),
     # movement
     "scroll": (1, _one("swipeScreen({0})")),
-    "scroll from element": (3, _one("swipeFrom({0}, {1})")),
+    "scroll from element": (3, lambda p: [f"swipeFrom({p[0]}, {p[1]}, {_num(p, 2, 0)})"]),
     "scroll until element appears": (3, _one("swipeUntil({0}, {1}, {2})")),
     "swipe until element appears": (3, _one("swipeUntil({0}, {1}, {2})")),
-    "swipe from element": (3, _one("swipeFrom({0}, {1})")),
+    "swipe from element": (3, lambda p: [f"swipeFrom({p[0]}, {p[1]}, {_num(p, 2, 0)})"]),
     "swipe": (4, lambda p: [f"swipeAt({p[0]}, {p[1]}, {p[2]}, {_num(p, 3, 200)})"]),
     "swipe by percentage": (4, lambda p: [f"swipePercent({p[0]}, {p[1]}, {p[2]}, {_num(p, 3, 200)})"]),
     # the one keyword iOS does better than Android, its name notwithstanding
@@ -652,14 +652,10 @@ _HELPERS = '''
         }
     }
 
-    func swipeFrom(_ name: String, _ direction: String) {
-        let element = el(name)
-        switch direction.lowercased() {
-        case "up": element.swipeUp()
-        case "down": element.swipeDown()
-        case "left": element.swipeLeft()
-        default: element.swipeRight()
-        }
+    /// From the element's top or left edge, as optics' `swipe_element` starts.
+    func swipeFrom(_ name: String, _ direction: String, _ length: Double) {
+        let vertical = ["up", "down"].contains(direction.lowercased())
+        drag(el(name).coordinate(withNormalizedOffset: CGVector(dx: vertical ? 0.5 : 0, dy: vertical ? 0 : 0.5)), direction, length)
     }
 
     /// A swipe that starts where the suite said, rather than in the middle of the screen.

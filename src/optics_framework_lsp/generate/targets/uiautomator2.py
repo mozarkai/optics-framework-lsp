@@ -300,11 +300,12 @@ _DIRECTIONS = {{"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 
 
 def _swipe_from(d, locator, direction, length):
+    """From the element's top or left edge, as optics' `swipe_element` starts."""
     box = _bounds(d, locator)
-    cx = (box["left"] + box["right"]) // 2
-    cy = (box["top"] + box["bottom"]) // 2
     dx, dy = _DIRECTIONS[direction.lower()]
-    d.swipe(cx, cy, cx + dx * length, cy + dy * length)
+    x = (box["left"] + box["right"]) // 2 if dx == 0 else box["left"]
+    y = (box["top"] + box["bottom"]) // 2 if dy == 0 else box["top"]
+    d.swipe(x, y, x + dx * length, y + dy * length)
 
 
 def _swipe_at(d, x, y, direction, length):

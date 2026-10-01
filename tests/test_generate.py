@@ -685,6 +685,16 @@ def test_swipe_and_scroll_from_element_carry_their_length(target):
     assert all(line in source for line in expected)
 
 
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_select_dropdown_option_waits_its_timeout(target):
+    steps = NAMED + "Open,Select Dropdown Option,${Btn},India,7\n"
+    body = generate(_suite(BASE[target], **{"modules/modules.csv": steps}), target)
+    assert body["unsupported"] == []
+    expected = {"uiautomator2": "_select(d, ELEMENTS['Btn'], 'India', float('7'))",
+                "xcuitest": 'XCTAssertTrue(waitFor("Btn", Double("7") ?? 30), "Btn")'}[target]
+    assert expected in body["source"]
+
+
 def test_a_locator_holding_an_equals_sign_stays_positional():
     """The runner treats a cell starting with `/` or `(` as positional, whatever it holds."""
     elements = 'Element_Name,Element_ID\nBtn,"//android.widget.Button[@text=\'a\']"\n'

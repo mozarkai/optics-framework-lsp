@@ -676,6 +676,15 @@ def test_validate_element_is_hard_with_optics_defaults_and_validate_screen_keeps
     assert all(line in body["source"] for line in expected)
 
 
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_swipe_and_scroll_from_element_carry_their_length(target):
+    steps = NAMED + "Open,Swipe From Element,${Btn},up,300\nOpen,Scroll From Element,${Btn},down,120\n"
+    source = generate(_suite(BASE[target], **{"modules/modules.csv": steps}), target)["source"]
+    expected = {"uiautomator2": ["_swipe_from(d, ELEMENTS['Btn'], 'up', int('300'))", "int('120')"],
+                "xcuitest": ['swipeFrom("Btn", "up", Double("300") ?? 0)', 'Double("120") ?? 0']}[target]
+    assert all(line in source for line in expected)
+
+
 def test_a_locator_holding_an_equals_sign_stays_positional():
     """The runner treats a cell starting with `/` or `(` as positional, whatever it holds."""
     elements = 'Element_Name,Element_ID\nBtn,"//android.widget.Button[@text=\'a\']"\n'

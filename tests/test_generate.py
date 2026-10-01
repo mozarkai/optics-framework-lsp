@@ -197,12 +197,25 @@ def test_a_refusal_names_each_element_every_reason_and_the_steps_that_need_it():
 
 
 def test_params_the_translation_drops_are_named():
-    """`press element`'s repeat has no native form; saying so beats trimming it in silence."""
-    modules = "module_name,module_step,param_1,param_2\nOpen,Press Element,${Btn},3\n"
+    """A dropped param is named rather than trimmed in silence."""
+    modules = "module_name,module_step,param_1,param_2\nOpen,Press Element,${Btn},aoi_x=10\n"
     found = generate(_suite(**{"modules/modules.csv": modules}))
     (finding,) = found["unsupported"]
     assert finding["code"] == "params-dropped"
-    assert "repeat" in finding["message"]
+    assert "aoi_x" in finding["message"]
+
+
+@pytest.mark.parametrize("target", sorted(TARGETS))
+def test_a_press_repeats_and_picks_its_index_as_optics_does(target):
+    steps = NAMED + "Open,Press Element,${Btn},repeat=3,index=2\nOpen,Press by Percentage,50,50,2\nOpen,Press by Coordinates,1,2,4\n"
+    body = generate(_suite(BASE[target], **{"modules/modules.csv": steps}), target)
+    assert body["unsupported"] == []
+    loops = {"uiautomator2": ["for _ in range(int('3')): _at(d, ELEMENTS['Btn'], int('2')).click()",
+                              "for _ in range(int('2')): d.click("],
+             "xcuitest": ['for _ in 0..<(Int("3") ?? 1) { elAt("Btn", "2").tap() }',
+                          'for _ in 0..<(Int("2") ?? 1) { tapPercent(']}[target]
+    assert all(loop in body["source"] for loop in loops)
+    assert "'4'" not in body["source"] and '"4"' not in body["source"]
 
 
 def test_a_step_naming_a_module_becomes_a_call_to_it():

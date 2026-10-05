@@ -695,6 +695,12 @@ def test_select_dropdown_option_waits_its_timeout(target):
     assert expected in body["source"]
 
 
+def test_force_terminate_app_on_ios_terminates_the_named_app():
+    steps = NAMED + "Open,Force Terminate App,com.example.other,\n"
+    source = generate(_suite(BASE["xcuitest"], **{"modules/modules.csv": steps}), "xcuitest")["source"]
+    assert 'XCUIApplication(bundleIdentifier: "com.example.other").terminate()' in source
+
+
 def test_a_locator_holding_an_equals_sign_stays_positional():
     """The runner treats a cell starting with `/` or `(` as positional, whatever it holds."""
     elements = 'Element_Name,Element_ID\nBtn,"//android.widget.Button[@text=\'a\']"\n'

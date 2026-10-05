@@ -167,7 +167,7 @@ EMIT: dict[str, tuple[int, object]] = {
     ),
     "launch other app": (1, _one("XCUIApplication(bundleIdentifier: {0}).activate()")),
     "close and terminate app": (0, _one("app.terminate()")),
-    "force terminate app": (1, _one("app.terminate()")),
+    "force terminate app": (1, _one("XCUIApplication(bundleIdentifier: {0}).terminate()")),
     "quit": (0, _one("app.terminate()")),
     # pressing
     # Offsets apply only to OCR/image matches, which are refused here.

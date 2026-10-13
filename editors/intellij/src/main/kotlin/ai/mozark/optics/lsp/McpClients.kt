@@ -15,7 +15,6 @@ import com.intellij.util.SystemProperties
 import java.io.Reader
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
@@ -193,17 +192,14 @@ object McpClients {
         SKILL_HOMES.filterValues { home(it).exists() }.keys.toList()
 
     /**
-     * Installs the skill, which tells an agent the framework post-dates its training data and
-     * where the documentation is. Separate from the MCP registration because it is a different
+     * Installs the skills: one telling an agent the framework post-dates its training data and
+     * where the documentation is, one for translating a suite to a native script. Separate from the MCP registration because it is a different
      * mechanism: the bridge owns the MCP `instructions` field, so this is the only way to say it.
      *
      * Only our own directory is written; the agent's own files are left alone.
      */
     fun installSkill(source: Path): List<String> = skillHomes().onEach { label ->
-        val target = home(SKILL_HOMES.getValue(label))
-            .resolve("skills").resolve("optics-framework").resolve("SKILL.md")
-        Files.createDirectories(target.parent)
-        Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
+        SkillCopy.into(source, home(SKILL_HOMES.getValue(label)).resolve("skills"))
     }
 
     private fun home(parts: List<String>): Path =

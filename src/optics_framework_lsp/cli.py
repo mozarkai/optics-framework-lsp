@@ -8,6 +8,8 @@ validates a whole suite in one shot and reports every finding:
     optics-lsp lint PATH --json # the machine-readable report either way
     optics-lsp parse PATH       # what the files say, rather than what is wrong with them
     optics-lsp generate PATH    # the suite as a native script (uiautomator2, or --target xcuitest)
+    optics-lsp install-skill    # copy the agent skills to Claude Code, Cursor and Gemini CLI
+    optics-lsp install-skill --project  # into this project's .claude (and .cursor) instead
 
 stdin is for a caller holding uploaded files in memory with nothing on disk, which is why it
 always answers JSON. A path is for a person, so it prints lines.
@@ -77,18 +79,42 @@ def _batch(command: str, path: str | None, as_json: bool, target: str) -> int:
     return 0
 
 
+def _install_skills(project: bool) -> int:
+    """Globally only where the agent's own directory exists, as evidence it is installed. In a
+    project Claude Code is always the target, since that directory is created by the first skill."""
+    import shutil
+
+    source = Path(__file__).parent / "skills"
+    if project:
+        base = Path.cwd()
+        homes = {"Claude Code": ".claude", "Cursor": ".cursor"}
+        found = [(label, base / home) for label, home in homes.items() if label == "Claude Code" or (base / home).is_dir()]
+    else:
+        base = Path.home()
+        homes = {"Claude Code": ".claude", "Cursor": ".cursor", "Gemini CLI": ".config/gemini-cli"}
+        found = [(label, base / home) for label, home in homes.items() if (base / home).is_dir()]
+    for label, home in found:
+        for skill in source.iterdir():
+            shutil.copytree(skill, home / "skills" / skill.name, dirs_exist_ok=True)
+        print(f"installed the optics skills for {label}: {home / 'skills'}")
+    if not found:
+        print("optics-lsp install-skill: no Claude Code, Cursor or Gemini CLI directory found", file=sys.stderr)
+    return 0 if found else 1
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="optics-lsp", description=__doc__)
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["lint", "parse", "generate"],
+        choices=["lint", "parse", "generate", "install-skill"],
         help="validate a suite, read one, or rewrite it as a native script, "
         "instead of serving over stdio",
     )
     parser.add_argument(
         "path", nargs="?", help="project directory to walk; omitted, the suite is read on stdin"
     )
+    parser.add_argument("--project", action="store_true", help="`install-skill` into this project, not globally")
     parser.add_argument("--json", action="store_true", help="report as JSON rather than lines")
     parser.add_argument(
         "--target",
@@ -100,6 +126,8 @@ def main() -> None:
     # refusing them would break a client for no gain.
     args, _ = parser.parse_known_args()
 
+    if args.command == "install-skill":
+        raise SystemExit(_install_skills(args.project))
     if args.command:
         raise SystemExit(_batch(args.command, args.path, args.json, args.target))
 

@@ -85,14 +85,15 @@ export async function pickScope(): Promise<Scope | undefined> {
 }
 
 /**
- * Installs the optics skill, which tells an agent the framework post-dates its training data and
- * where the documentation is. Separate from the MCP registration because it is a different
+ * Installs the optics skills: one telling an agent the framework post-dates its training data and
+ * where the documentation is, one for translating a suite to a native script. Separate from the MCP registration because it is a different
  * mechanism: the bridge owns the MCP `instructions` field, so this is the only way to say it.
  *
  * Only our own directory is written. The `CLAUDE.md` skills table that some installers maintain is
  * the user's file and is left alone.
  */
 export async function installSkill(source: vscode.Uri): Promise<string[]> {
+  const skills = (await vscode.workspace.fs.readDirectory(source)).filter(([, kind]) => kind === vscode.FileType.Directory);
   const installed: string[] = [];
   for (const { label, parent } of SKILL_HOMES) {
     const home = vscode.Uri.file(`${homedir()}/${parent}`);
@@ -101,9 +102,11 @@ export async function installSkill(source: vscode.Uri): Promise<string[]> {
     } catch {
       continue;
     }
-    const target = vscode.Uri.joinPath(home, 'skills', 'optics-framework', 'SKILL.md');
-    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(target, '..'));
-    await vscode.workspace.fs.copy(source, target, { overwrite: true });
+    for (const [name] of skills) {
+      const target = vscode.Uri.joinPath(home, 'skills', name);
+      await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(target, '..'));
+      await vscode.workspace.fs.copy(vscode.Uri.joinPath(source, name), target, { overwrite: true });
+    }
     installed.push(label);
   }
   return installed;

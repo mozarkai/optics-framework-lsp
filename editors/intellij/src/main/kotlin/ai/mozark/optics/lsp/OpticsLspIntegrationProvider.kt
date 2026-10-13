@@ -107,9 +107,9 @@ class OpticsLspIntegrationProvider : LspIntegrationProvider, PluginAware {
         val bundledLibs: Path
             get() = pluginDir.resolve("bundled/libs")
 
-        /** The agent skill, one copy shared with the VS Code extension. See `editors/skills`. */
-        val skillFile: Path
-            get() = pluginDir.resolve("skills/optics-framework/SKILL.md")
+        /** The agent skills, one copy shared with the VS Code extension. See `src/optics_framework_lsp/skills`. */
+        val skillsDir: Path
+            get() = pluginDir.resolve("skills")
 
         fun resetWarnings() = warned.clear()
     }

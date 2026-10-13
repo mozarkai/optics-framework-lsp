@@ -12,6 +12,8 @@ bundled/libs/.installed: ../Makefile ../../uv.lock ../../pyproject.toml $(SERVER
 	mkdir -p bundled && rm -rf bundled/libs && cp -R ../bundled/libs bundled/libs
 	touch $@
 
-# The agent skill is shared with the JetBrains plugin; vsce can only package from this directory.
-skills/.installed: ../skills/optics-framework/SKILL.md
-	rm -rf skills && cp -R ../skills skills && touch $@
+# The agent skills ship in the Python package and are shared with the JetBrains plugin; vsce can only
+# package from this directory.
+SKILLS := ../../src/optics_framework_lsp/skills
+skills/.installed: $(shell find $(SKILLS) -type f)
+	rm -rf skills && cp -R $(SKILLS) skills && touch $@

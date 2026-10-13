@@ -52,7 +52,7 @@ tasks.prepareSandbox {
         exclude("**/__pycache__/**")
     }
     // Copied rather than read from source: the plugin has to install it from an installed zip.
-    from(layout.projectDirectory.dir("../skills")) {
+    from(layout.projectDirectory.dir("../../src/optics_framework_lsp/skills")) {
         into("${pluginName.get()}/skills")
     }
 }
@@ -82,6 +82,10 @@ testing.suites.register<JvmTestSuite>("serverTest") {
             systemProperty(
                 "optics.bundledLibs",
                 layout.projectDirectory.dir("../bundled/libs").asFile.path,
+            )
+            systemProperty(
+                "optics.skills",
+                layout.projectDirectory.dir("../../src/optics_framework_lsp/skills").asFile.path,
             )
             systemProperty(
                 "optics.fixture",

@@ -118,7 +118,7 @@ class ConfigureMcpAction : AnAction() {
         // Not scoped: an agent reads its skills from one place regardless of the project it is in.
         val skilled = if (!skill) emptyList() else try {
             indicator.text = "Installing the optics skill"
-            McpClients.installSkill(OpticsLspIntegrationProvider.skillFile)
+            McpClients.installSkill(OpticsLspIntegrationProvider.skillsDir)
         } catch (error: Exception) {
             failed += "Could not install the optics skill: ${error.message}"
             log.warn("could not install the optics skill", error)

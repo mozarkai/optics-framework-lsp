@@ -20,7 +20,16 @@ would do step for step, and anything it cannot do is reported, never approximate
 3. **Pick the target** from `config.yaml`: `appium` with `platformName: Android` →
    uiautomator2; `platformName: iOS` → XCUITest. A browser suite (`playwright` or
    `selenium` driver) is not translated - say so and stop.
-4. **Read the keyword tables from the installed optics-lsp.** Find the package with
+4. **Use the latest optics-framework.** The references were written against 1.10.4; newer
+   releases are the truth. Find the newest version (`curl -s
+   https://pypi.org/pypi/optics-framework/json`, field `info.version`) and compare it with
+   `OPTICS_VERSION` in the installed optics-lsp's `keywords.py`. If they are equal, there is
+   nothing to fetch. If `keywords.py` is older, fetch the latest source with
+   `uv pip install --no-deps --target <scratch dir> optics-framework` and read the keywords
+   you translate from its `optics_framework/api/` (`action_keyword.py`, `app_management.py`,
+   `flow_control.py`, `verifier.py`). Where it disagrees with a reference file, follow the
+   latest optics and say so in the report.
+   **Then read the keyword tables from the installed optics-lsp.** Find the package with
    `python -c "import optics_framework_lsp, os; print(os.path.dirname(optics_framework_lsp.__file__))"`,
    using the Python optics-lsp is installed into - for `uv tool install` that is
    `~/.local/share/uv/tools/optics-framework-lsp/bin/python`, not the system one. Then read:
@@ -50,12 +59,17 @@ would do step for step, and anything it cannot do is reported, never approximate
    *before* step 7 - compare against it for the core; step 7 adds to it.
 7. **Add what every script carries**, from `references/run-output.md`: the error
    definitions and the end-of-test check, the report files, the source-map comment and
-   origin on every step, and the wait settings. These are the only changes allowed to the
-   runtime: `main()` / the test runner, and the fixed sleeps and timeouts in the wait loops.
+   origin on every step, and the wait settings. On Android copy the three parts of
+   `assets/uiautomator2_run_output.py` into the script and fill in `ERRORS`; on iOS do the
+   same with `assets/xcuitest_run_output.swift` and its `errors`, following `references/ios.md`;
+   its Part 2 replaces the example's `setUpWithError` and `tearDownWithError` entirely.
+   These are the only changes allowed to the runtime: `main()` / the test runner, the fixed
+   sleeps and timeouts in the wait loops, and the corrections in `references/android.md`.
    Run the test cases **in suite order**, not alphabetically.
 8. **Write a report** after the script: one line per step or element you could not
-   translate, with file, row, step and reason. Say "0 steps did not translate" when there
-   are none.
+   translate, with file, line number, step and reason. Say "0 steps did not translate" when there
+   are none. A step that translated but had a param dropped (`event_name`) is not one that
+   did not translate: list it in a separate table of dropped params.
 9. **Check the script**, and fix it until the check is clean.
    - Android: `uvx pyflakes <file>`. `'os' imported but unused` is expected when
      the script reads no environment variable.
@@ -77,9 +91,10 @@ would do step for step, and anything it cannot do is reported, never approximate
   locator has no usable locator, or a `${name}` it reads is defined nowhere. A script that
   silently skips a step tests less than the suite.
 - **Don't edit the runtime's helpers** beyond what step 7 allows. They were checked on a real
-  emulator and simulator. Add only the helpers the references describe (variable store, flow control, data, API,
+  emulator and simulator, apart from the known corrections in `references/android.md`. Add only the helpers the references describe (variable store, flow control, data, API,
   detection, reports, source map); for anything else, report the step.
-- **Keywords come from `keywords.py` only.** A keyword not in it is unknown to optics.
+- **Keywords come from `keywords.py` only** - refreshed from the latest optics as in step 4.
+  A keyword not in it is unknown to optics.
 - **Refused keywords:** `Condition`, `Run Loop`, `Evaluate`, `Date Evaluate`, `Read Data`
   and `Invoke API` are refused in the tables but translated with the references above.
   Every other keyword in `UNSUPPORTED` is refused, whatever it looks like it could become.

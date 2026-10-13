@@ -2,7 +2,8 @@
 
 Both write the variable store from `references/flow-control.md`. The keyword tables mark
 them refused - translate them with this file instead, writing the code from
-`references/code-patterns.md`. Behaviour is optics-framework 1.10.4's.
+`references/code-patterns.md`. Behaviour is optics-framework 1.10.4's; where the latest optics differs, follow it
+(`SKILL.md` step 4).
 
 ## Read Data
 
@@ -18,8 +19,8 @@ them refused - translate them with this file instead, writing the code from
 - JSON: a dict uses its first list-valued entry, else becomes one row; nested keys flatten to
   `a.b` column names.
 
-**Every cell becomes a string** after pandas reads it - so `007` reads as `7` and an integer
-in a float column as `1.0`. Android: use `pandas.read_csv(...).astype(str)` to match.
+**Every cell becomes a string** the way pandas gives it - so `007` reads as `7` and an integer
+in a float column as `1.0`. The Python pattern reproduces that without pandas.
 
 **Query** - split on `;`, strip, drop empty parts:
 
@@ -39,7 +40,7 @@ in a float column as `1.0`. Android: use `pandas.read_csv(...).astype(str)` to m
 - **Zero or several rows:** optics crashes (`TypeError` joining lists). Fail the step with
   `Read Data matched N rows` rather than invent a shape.
 
-Android: `pandas` exactly as above. iOS: parse the CSV yourself (cells as strings), and
+Android: the standard-library pattern in `references/code-patterns.md`. iOS: parse the CSV yourself (cells as strings), and
 evaluate the filters with `NSPredicate(format:)` over `[String: String]` rows - it reads
 `col == 'v'`, `!=`, `AND`/`OR` and parentheses; refuse a query using anything else.
 

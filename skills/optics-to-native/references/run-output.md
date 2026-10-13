@@ -4,7 +4,8 @@ Error-code detection, the report files, mapping failures back to the suite, and 
 script writes these the same way so a CI job - or App Studio - can read any of them.
 
 All output goes to the folder in `EXEC_OUTPUT`, default `./output` (iOS: the test's
-`XCTAttachment`s plus the same files in `NSTemporaryDirectory()/output`).
+`XCTAttachment`s plus the same files in `EXEC_OUTPUT`, default `NSTemporaryDirectory()/output`;
+on iOS a failing step ends the test case, and `tearDownWithError` writes its result).
 
 ## Error-code detection
 
@@ -32,7 +33,8 @@ row with the same code wins). Carry them into the script as a table.
    "detected_at": "end_of_test", "test_case": "Login"}]}
 ```
 
-`<session>` is `SESSION_ID` from the environment, else a timestamp.
+`<session>` is `SESSION_ID` from the environment, else a timestamp. The file is written only
+when a test case matched something; a clean run leaves none.
 
 ## Report files
 
@@ -53,17 +55,36 @@ row with the same code wins). Carry them into the script as a table.
 - Statuses `PASS` / `FAIL` / `ERROR` / `SKIP`; a step after the failing one is `NOT RUN`.
 - Times `%Y-%m-%dT%H:%M:%S.%f`; durations strings with six decimals.
 - `reason`: `Test completed successfully` on pass, else the failure message.
-- One step per module, `owner` by the family of its first keyword: `AppManagement`,
-  `ActionKeywords`, `Verifier` or `FlowControl` under `OpticsKeywords.`.
+- One step per module. `owner` is the optics class that defines the keyword of the module's
+  first step, under `OpticsKeywords.`. Read off optics 1.10.5:
+  - `ActionKeywords`: Clear Element Text, Detect And Press, Enter Number, Enter Text, Enter
+    Text Direct, Enter Text Using Keyboard, Execute Script, Get Text, Press By Coordinates,
+    Press By Percentage, Press Checkbox, Press Element, Press Element With Index, Press
+    Keycode, Press Radio Button, Scroll, Scroll From Element, Scroll Until Element Appears,
+    Select Dropdown Option, Sleep, Swipe, Swipe By Percentage, Swipe From Element, Swipe
+    Seekbar To Right Android, Swipe Until Element Appears
+  - `AppManagement`: Close And Terminate App, Force Terminate App, Get App Version, Get Driver
+    Session Id, Initialise Setup, Launch App, Launch Other App, Quit, Start Appium Session
+  - `Verifier`: Assert Equality, Assert Presence, Assert Visibility, **Capture Pagesource,
+    Capture Screenshot**, Get Interactive Elements, Get Screen Elements, Is Element, Validate
+    Element, Validate Screen
+  - `FlowControl`: Condition, Date Evaluate, Evaluate, Execute Module, Invoke API, Read Data,
+    Run Loop
+
+  A module that is only another module's call is `FlowControl`.
 - `FAIL` for an assertion (`AssertionError`), `ERROR` for any other exception.
 
 **`junit-results.xml`** - `<testsuites>` > `<testsuite tests failures errors skipped time>` >
-one `<testcase name classname time>` per test case, with `<failure message>` on failure.
+one `<testcase name classname time>` per test case, with `<failure message>` for a `FAIL`
+and `<error message>` for an `ERROR`.
 
 **Screenshots** - `post-<%Y-%m-%dT%H-%M-%S-%f>-failure.jpg` when a test case fails, and
 `post-<ts>-<keyword>.jpg` (the keyword as the suite writes it, spaces kept) after each
-action step - any keyword that is not an assertion, validation or flow-control keyword - unless `ENABLE_POST_SCREENSHOT` is `0`,
-`false` or `no`.
+action step - a step whose keyword's owner is `ActionKeywords` or `AppManagement`, except
+`Sleep` - unless `ENABLE_POST_SCREENSHOT` is `0`, `false` or `no`. A screenshot that cannot
+be taken (the app was just closed) never fails the step. The file names are the skill's own:
+optics 1.10.4 writes `<ts>-<keyword>.jpg` and `pre_<keyword>.jpg` files instead, and nothing
+reads them for a result, so they are not part of the pass/fail behaviour.
 
 ## Source map
 
@@ -77,9 +98,10 @@ Every emitted step line ends with where it came from, and a failure names it:
   Android, `at = "modules.csv:7 Press Element"` on iOS); the failure message and the
   report's `reason` start with it: `modules.csv:7 Press Element: none of [...] matched`.
 - Only steps set an origin; a test function's module calls get the comment only.
-- The origin is the step's file and 1-based row, header included (YAML: its line). A
-  module's steps are its rows in file order, so its nth step in `optics-lsp parse` is its
-  nth row; a module split across files keeps each part's own file.
+- The origin is the step's file and **line number as an editor shows it** (1-based, header
+  and blank lines included; YAML: its line). A module's steps come in file order, so its nth
+  step in `optics-lsp parse` is the nth non-blank row of that module; a module split across
+  files keeps each part's own file.
 
 ## Waits
 

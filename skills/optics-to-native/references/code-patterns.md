@@ -4,8 +4,8 @@ How the keywords in `references/flow-control.md` and `references/data-and-api.md
 written in each language. The semantics are in those files; this is the code. Add these
 helpers to the script once, next to the runtime, and only the ones the suite uses.
 
-Python needs `pandas`, `requests` and `jsonpath_ng` only when the script uses `Read Data`
-or `Invoke API`; say so in the report. The Swift uses regex literals, so iOS 16 or later.
+Python needs `requests` and `jsonpath_ng` only when the script uses `Invoke API`; say so in
+the report. `Read Data` uses the standard library only. The Swift uses regex literals, so iOS 16 or later.
 
 Data the suite ships - CSV/JSON files for `Read Data`, the API YAML for `Invoke API` - is
 **embedded in the script as literals** when you write it, so the script needs no project
@@ -29,14 +29,16 @@ def _append(name, value):         # Date Evaluate
 ```
 
 ```swift
-var store: [String: [String]] = [:]
+/// Static: XCTest makes a new instance for every test method, and the store lives for the
+/// whole run. It replaces the example's `vars`.
+static var store: [String: [String]] = [:]
 
 func v(_ name: String) -> String {
-    if let first = store[name]?.first ?? ELEMENTS[name]?.first { return first }
+    if let first = Self.store[name]?.first ?? ELEMENTS[name]?.first { return first }
     XCTFail("E0201 Element not found: \(name)"); return ""
 }
-func set(_ name: String, _ value: String) { store[name] = [value] }
-func append(_ name: String, _ value: String) { store[name, default: []].append(value) }
+func set(_ name: String, _ value: String) { Self.store[name] = [value] }
+func append(_ name: String, _ value: String) { Self.store[name, default: []].append(value) }
 ```
 
 A step param `${name}` that is not a locator becomes `_var("name")` / `v("name")`.
@@ -69,7 +71,8 @@ def _condition(d, pairs, otherwise=None):
         otherwise(d)
 
 # Condition, Is Logged In, Go Home, !Has Banner, Close Banner, ${status} == "ok", Done, Log In
-_condition(d, [
+# (in a module: `_origin(...)` on the line before, the source comment on the first line below)
+_condition(d, [  # modules.csv:12 Condition
     (lambda: _ok(d, is_logged_in), go_home, True),
     (lambda: not _ok(d, has_banner), close_banner, False),
     (lambda: _var("status") == "ok", done, False),
@@ -86,18 +89,31 @@ func ok(_ module: () -> Void) -> Bool {
     options.issueMatcher = { _ in failed = true; return true }
     let keep = continueAfterFailure
     continueAfterFailure = true
+    swallowing += 1  // `record(_:)` of the run-output asset must not report this failure
     XCTExpectFailure("condition", options: options) { module() }
+    swallowing -= 1
     continueAfterFailure = keep
     return !failed
 }
 
-if ok(isLoggedIn) { goHome() } else if !ok(hasBanner) { closeBanner() } else { logIn() }
+// Condition, Is Logged In, Go Home, !Has Banner, Close Banner, Log In
+var done = false
+if ok(isLoggedIn) { done = ok(goHome) }                       // a module condition swallows a failing target...
+if !done && !ok(hasBanner) { closeBanner(); done = true }     // ...a `!` condition does not
+if !done { logIn() }
 ```
+
+`ok` catches failed **assertions** (`Assert …`, `Validate …`, `XCTAssert…`). A step that acts on
+an element that is not there (`tap`, `typeText`, a swipe from it) raises a failure XCTest does
+not let `ok` catch: it ends the whole test case, inside `ok` too. So a condition's module may
+only be a check, or must test the element first with `matches(...)`; for any other module,
+write the step into the report as one that cannot be swallowed.
 
 An expression condition compares the quoted first values - write it directly:
 `${status} == "ok"` → `if _var("status") == "ok":` / `if v("status") == "ok" {`. If the
-expression compares a quoted value with a number, optics raises - emit the failure, not the
-comparison.
+expression orders a quoted value against a number (`<`, `>`, `<=`, `>=`), optics raises - emit
+the failure, not the comparison. `==` and `!=` against a number do not raise: emit them as
+written, `"2" == 2` being False.
 
 ## Run Loop
 
@@ -111,6 +127,11 @@ for user, pin in zip(["alice", "bob"], ["1111", "2222", "3333"]):
     _set("user", user)
     _set("pin", pin)
     login(d)
+
+# Run Loop, Type One Name, loop_name, Optics|Mozark|Bitbar   (one variable)
+for _value in ["Optics", "Mozark", "Bitbar"]:
+    _set("loop_name", _value)
+    type_one_name(d)
 ```
 
 ```swift
@@ -220,36 +241,71 @@ Translate the suite's strftime format to a `DateFormatter` pattern when you writ
 ## Read Data
 
 ```python
+import ast
+import csv
 import io
-import pandas
+import re
 
 DATA = {"users.csv": """device_serial,user,valid_upi
 R58M,alice,alice@upi
 """}
 
+_QUERY_OK = (ast.Expression, ast.BoolOp, ast.UnaryOp, ast.Compare, ast.Name, ast.Load, ast.Constant,
+             ast.List, ast.Tuple, ast.And, ast.Or, ast.Not, ast.Eq, ast.NotEq, ast.Lt, ast.Gt,
+             ast.LtE, ast.GtE, ast.In, ast.NotIn)
+
+def _strings(column):
+    if column and all(re.fullmatch(r"[+-]?\d+", c) for c in column):
+        return [str(int(c)) for c in column]
+    try:
+        return [str(float(c)) if c != "" else None for c in column]
+    except ValueError:
+        return [c if c != "" else None for c in column]
+
+def _table(text):
+    header, *body = csv.reader(io.StringIO(text))
+    body = [r for r in body if r]
+    columns = [_strings([r[i] if i < len(r) else "" for r in body]) for i in range(len(header))]
+    return header, [dict(zip(header, r)) for r in zip(*columns)]
+
 def _read_data(name, source, query=""):
-    frame = pandas.read_csv(io.StringIO(DATA[source])).astype(str)
+    header, rows = _table(DATA[source])
     parts = [p.strip() for p in query.split(";") if p.strip()]
     quote = lambda m: "'%s'" % _var(m.group(1))
     filters = [re.sub(r"(?<!')\$\{([^}]+)\}(?!')", quote, p) for p in parts if not p.startswith("select=")]
     selects = [p[len("select="):] for p in parts if p.startswith("select=")]
     if filters:
-        frame = frame.query(" and ".join(filters))
-        if frame.empty:
+        tree = ast.parse(" and ".join(filters), mode="eval")
+        if not all(isinstance(n, _QUERY_OK) for n in ast.walk(tree)):
+            raise AssertionError("E0403 Unsupported query: %r" % query)
+        code = compile(tree, "<query>", "eval")
+        rows = [r for r in rows if eval(code, {"__builtins__": None}, r)]
+        if not rows:
             raise AssertionError("E0403 No data found matching the query/filter: %r" % query)
-    if selects:
-        frame = frame[[c.strip() for c in selects[-1].split(",")]]
-    rows = frame.values.tolist()
+    columns = [c.strip() for c in selects[-1].split(",")] if selects else header
     if len(rows) != 1:
         raise AssertionError("Read Data matched %d rows" % len(rows))
-    _set(name, ",".join(rows[0]))
+    _set(name, ",".join(rows[0][c] for c in columns))
 ```
 
-`ENV:NAME` reads `os.environ["NAME"]` into a frame the same way (JSON or CSV), or stores the
-raw string. JSON files go through `pandas.json_normalize`.
+No `pandas`: the CSV is read with `csv`, each column is turned into the text pandas would
+give (`_strings`), and the filter is a Python expression over the row, which is what
+`DataFrame.query` does for these operators. This was checked against `pandas` on 20 CSV and
+query combinations with no differences. An empty selected cell fails the step - the join
+raises `TypeError` - as it does in optics with pandas 3. A query with backticks or `.str` is
+not a Python expression: refuse that step at write time.
+
+`ENV:NAME` reads `os.environ["NAME"]` the same way (JSON or CSV), or stores the raw string.
+A JSON file is a list of objects (a dict uses its first list-valued entry, else is one row);
+flatten each object's nested keys to `a.b` with a small recursive function and turn every
+value into text with `str`, then filter as above.
 
 ```swift
 let DATA: [String: String] = ["users.csv": "device_serial,user,valid_upi\nR58M,alice,alice@upi\n"]
+
+func header(_ csv: String) -> [String] {
+    return cells(String(csv.split(whereSeparator: \.isNewline).first ?? ""))
+}
 
 func rows(_ csv: String) -> [[String: String]] {
     var lines = csv.split(whereSeparator: \.isNewline).map { cells(String($0)) }
@@ -290,13 +346,12 @@ func readData(_ name: String, _ source: String, _ query: String = "") {
         $0.dropFirst(7).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
     }
     guard table.count == 1, let row = table.first else { return XCTFail("Read Data matched \(table.count) rows") }
-    set(name, (columns ?? Array(row.keys)).map { row[$0] ?? "" }.joined(separator: ","))
+    set(name, (columns ?? header(DATA[source] ?? "")).map { row[$0] ?? "" }.joined(separator: ","))
 }
 ```
 
 `NSPredicate` reads `col == 'v'`, `!=`, `<`, `>`, `AND`/`OR` (any case) and parentheses -
-refuse a query using pandas features beyond those (`in`, `.str`, backticks). With no
-`select=`, write the column order out from the CSV header instead of `row.keys`.
+refuse a query using anything beyond those (`in`, `.str`, backticks).
 
 ## Invoke API
 

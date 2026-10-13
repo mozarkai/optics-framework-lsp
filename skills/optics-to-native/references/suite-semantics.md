@@ -1,6 +1,7 @@
 # How a suite behaves at run time
 
-What optics does with each step, checked against optics-framework 1.10.4. The script has to
+What optics does with each step, written against optics-framework 1.10.4 (follow the latest where it differs: `SKILL.md`
+step 4). The script has to
 do the same.
 
 ## Steps and params
@@ -11,9 +12,11 @@ do the same.
   cell holding `name=value` is a named param and fills that slot instead - unless it starts
   with `/` or `(`, which makes it a locator that happens to contain `=`.
 - A **named param the keyword does not have**, or one given twice, is an error in optics.
-  Report the step.
+  Report the step. A cell like `select=name;kind == 'primary'` (a `Read Data` query) is not a
+  named param: `select` is not a parameter of the keyword, so it is positional text.
 - An **empty cell** means "use the default".
-- `event_name` exists only for optics' event store. Drop it and report it.
+- `event_name` exists only for optics' event store. Drop it and report it. For `Capture
+  Screenshot` and `Capture Pagesource`, whose one param is `event_name`, the cell is discarded.
 
 ## `${name}`
 
@@ -29,15 +32,18 @@ do the same.
 ## Elements
 
 - An element is a name and **one or more locators**. The same name on several rows, or
-  `Element_ID_fallback` columns, adds fallbacks, tried in the order they appear.
+  `Element_ID_fallback` columns, adds fallbacks, tried in the order they appear. **Only
+  columns whose header starts with `Element_ID` are locators**: optics ignores any other
+  column, such as `Element_Text`, so leave it out.
 - Each locator is checked against `references/locators.md`. One with no native form is
   dropped. An element left with none is unusable, and a step using it as a locator
   cannot run.
 
 ## `config.yaml`
 
-- **Android:** the Appium capabilities `deviceName`, `appPackage` and `appActivity` set the
-  device and the app. A value `ENV:NAME` is read from the environment when the script runs,
+- **Android:** the Appium capabilities `udid` (else `deviceName`), `appPackage` and
+  `appActivity` set the device and the app. `udid` is the serial `u2.connect` needs;
+  `deviceName` is often just a label such as "Android Emulator". A value `ENV:NAME` is read from the environment when the script runs,
   and fails if it is unset.
 - **iOS:** the same `appium` block with `platformName: iOS` - `bundleId` (or
   `appium:bundleId`) names the app, `udid` (or `appium:udid`) the device. See

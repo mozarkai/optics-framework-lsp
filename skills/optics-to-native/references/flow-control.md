@@ -3,7 +3,7 @@
 `Condition`, `Run Loop`, `Evaluate`, `Date Evaluate`, and the variable store they share. The
 keyword tables mark these refused - translate them with this file instead, writing the code from
 `references/code-patterns.md`. Behaviour is
-optics-framework 1.10.4's.
+optics-framework 1.10.4's; where the latest optics differs, follow it (`SKILL.md` step 4).
 
 ## The variable store
 
@@ -11,7 +11,8 @@ optics keeps one store for the whole run: a name maps to a **list of strings**. 
 script the same:
 
 - Android: `VARS = {}` (already in the runtime) holding `{name: [str, ...]}`.
-- iOS: `vars: [String: String]` holds the first value only - widen to `[String: [String]]`
+- iOS: the example's `vars: [String: String]` holds the first value only and is per test method - use the
+  static `store: [String: [String]]` from `references/code-patterns.md` instead
   only if a keyword below needs the list.
 
 Rules every keyword below follows:
@@ -47,7 +48,9 @@ An **expression condition** is anything else:
 
 - Each `${x}` becomes `"<first value>"` - **in double quotes, so always a string**.
 - Then a restricted Python expression (same grammar as `Evaluate`) decides truthiness.
-- So `${n} > 5` compares a string with a number and fails the step; `${a} == "yes"` works.
+- So `${n} > 5` compares a string with a number and **raises**, failing the step. `==` and `!=`
+  do not raise: `${n} == 2` is `"2" == 2`, which is **False** (and `!=` is True), so the
+  branch is simply not taken. `${a} == "yes"` works as written.
 - `!expr` inverts, and an inverted expression that **errors counts as true**.
 
 Nothing matched → run the else target if there is one, else do nothing.
@@ -82,7 +85,9 @@ step's check `&&`-ed) or run it under `XCTContext.runActivity` and check
   module. Afterwards the variables keep their last value.
 - An empty list, an odd pair count, or a value list that is neither → fail the step.
 - A `${list}` as the values gives only its first value, which then has to be `|` or JSON
-  itself - a `Read Data` result (`a,b,c`) is not.
+  itself - a `Read Data` result (`a,b,c`) is not. When that element is a constant the suite
+  never writes at run time, write its value into the script as a literal list; if the suite
+  also writes the name (`Read Data`, `Evaluate`), read it with `_var` when the loop starts.
 
 ## Evaluate
 

@@ -31,4 +31,6 @@ in this order - the first rule that fits wins:
   "How an xpath runs" in `references/ios.md` for what it reads. An xpath outside that is
   refused; so is one naming an Android class.
 
-A dropped locator is reported with its reason. The element keeps its other locators.
+A dropped locator is reported with its reason. The element keeps its other locators. An
+element left with none is only unusable *as a locator*: when a step reads it as a value (a
+`Run Loop` list, a typed text), its value is still there to inline.

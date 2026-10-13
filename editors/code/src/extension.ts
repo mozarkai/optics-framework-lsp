@@ -8,6 +8,7 @@ import {
   TextDocumentFilter,
 } from 'vscode-languageclient/node';
 import * as clients from './clients';
+import { DeviceView, VIEW_ID } from './deviceView';
 import * as mcp from './mcp';
 
 const MIN_PYTHON: [number, number] = [3, 12];
@@ -31,6 +32,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     mcp.register(context, () => resolveServerOptions(context)),
+    vscode.window.registerWebviewViewProvider(VIEW_ID, new DeviceView(context)),
     vscode.commands.registerCommand('optics.server.restart', () => restart(context)),
     vscode.commands.registerCommand('optics.mcp.configure', () => configureMcp(context)),
     vscode.workspace.onDidChangeConfiguration((event) => {

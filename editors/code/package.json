@@ -35,6 +35,24 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "optics",
+          "title": "Optics",
+          "icon": "media/device.svg"
+        }
+      ]
+    },
+    "views": {
+      "optics": [
+        {
+          "type": "webview",
+          "id": "optics.deviceView",
+          "name": "Device"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "optics.server.restart",
@@ -69,6 +87,22 @@
           ],
           "default": "off",
           "description": "Log LSP messages sent to/from the server"
+        },
+        "optics.deviceView.refreshMs": {
+          "scope": "window",
+          "type": "number",
+          "default": 1000,
+          "minimum": 250,
+          "description": "How often the Device view asks for a new screenshot. A capture takes about a second on an Android emulator, so going lower mostly shows the same frame."
+        },
+        "optics.deviceView.adbPath": {
+          "scope": "window",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "The adb binary the Device view uses. Set this when the editor was started without the Android platform tools on its PATH."
         },
         "optics.mcp.enabled": {
           "scope": "window",

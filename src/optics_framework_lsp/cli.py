@@ -63,6 +63,11 @@ def _batch(command: str, path: str | None, as_json: bool) -> int:
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["_device"]:
+        from .device import main as device
+
+        raise SystemExit(device(sys.argv[2:]))
+
     parser = argparse.ArgumentParser(prog="optics-lsp", description=__doc__)
     parser.add_argument(
         "command",

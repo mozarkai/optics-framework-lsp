@@ -82,7 +82,7 @@ class OpticsLspDescriptor(project: Project, private val python: Path) :
     }
 }
 
-private fun pythonPath(): String = listOfNotNull(
+internal fun pythonPath(): String = listOfNotNull(
     OpticsLspIntegrationProvider.bundledLibs.toString(),
     EnvironmentUtil.getValue("PYTHONPATH")?.ifEmpty { null },
 ).joinToString(File.pathSeparator)

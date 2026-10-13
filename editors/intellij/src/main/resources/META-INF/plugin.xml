@@ -23,6 +23,13 @@
        lives in optics-lsp.xml. -->
   <depends optional="true" config-file="optics-lsp.xml">com.intellij.modules.lsp</depends>
 
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Not in optics-lsp.xml: it shows a screenshot and needs no LSP client, so an IDE without the
+         LSP module still gets it. -->
+    <toolWindow id="Optics Device" anchor="right" icon="/icons/device.svg"
+                factoryClass="ai.mozark.optics.lsp.DeviceToolWindowFactory"/>
+  </extensions>
+
   <projectListeners>
     <!-- Not in optics-lsp.xml: this is about which editor tab opens, and holds regardless of
          whether the IDE has an LSP client. -->

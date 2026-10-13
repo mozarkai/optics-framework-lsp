@@ -18,6 +18,15 @@ class OpticsConfigurable : BoundConfigurable("Optics Framework") {
                         "Python 3.12 or newer is required."
                 )
         }
+        row("adb binary:") {
+            textField()
+                .bindText(OpticsSettings.getInstance()::adbPath)
+                .align(AlignX.FILL)
+                .comment(
+                    "Used by the Optics Device tool window. Leave empty to use adb from ANDROID_HOME " +
+                        "or PATH."
+                )
+        }
         row("MCP bridge binary:") {
             textField()
                 .bindText(OpticsSettings.getInstance()::bridgePath)

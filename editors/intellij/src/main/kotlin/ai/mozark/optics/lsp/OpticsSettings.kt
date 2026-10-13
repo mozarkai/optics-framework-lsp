@@ -19,6 +19,10 @@ class OpticsSettings : PersistentStateComponent<OpticsSettings> {
     @JvmField
     var bridgePath: String = ""
 
+    /** For the Device tool window. Empty means the PATH and the usual SDK folders. */
+    @JvmField
+    var adbPath: String = ""
+
     override fun getState(): OpticsSettings = this
 
     override fun loadState(state: OpticsSettings) = XmlSerializerUtil.copyBean(state, this)

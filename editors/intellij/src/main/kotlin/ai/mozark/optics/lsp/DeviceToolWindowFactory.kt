@@ -72,7 +72,7 @@ private class DevicePanel(private val project: Project) : JPanel(BorderLayout())
 
     @Volatile private var selected: Device? = null
 
-    private val poller = FramePoller({ 1000 }) { frame() }
+    private val poller = FramePoller(250) { frame() }
 
     init {
         val refresh = JButton("Refresh")
@@ -86,7 +86,6 @@ private class DevicePanel(private val project: Project) : JPanel(BorderLayout())
         picker.addActionListener { selected = picker.selectedItem as? Device
             selected?.let { PropertiesComponent.getInstance(project).setValue(remembered, it.id) } }
 
-        // A FlowLayout row stays one line tall and clips the last buttons when narrow.
         val buttons = JPanel(GridLayout(1, 3, 4, 0)).apply { add(refresh); add(pause); add(zoom) }
         val bar = JPanel(BorderLayout(0, 4)).apply {
             border = JBUI.Borders.empty(4)
@@ -147,7 +146,6 @@ private class DevicePanel(private val project: Project) : JPanel(BorderLayout())
             ApplicationManager.getApplication().invokeLater { screen.image = image; note.text = "" }
         } catch (error: Exception) {
             say(error.message ?: "Could not capture the screen")
-            // The device may have gone away or another one booted, so look again.
             relist()
         }
     }

@@ -37,6 +37,10 @@ export class DeviceView implements vscode.WebviewViewProvider {
     return vscode.workspace.getConfiguration('optics.deviceView').get<T>(key) ?? fallback;
   }
 
+  private adb(): string | undefined {
+    return this.setting<string | null>('adbPath', null) ?? undefined;
+  }
+
   private post(message: object): void {
     void this.view?.webview.postMessage(message);
   }
@@ -77,7 +81,7 @@ export class DeviceView implements vscode.WebviewViewProvider {
       return;
     }
     try {
-      this.listing = await device.listDevices(launch, this.setting<string | null>('adbPath', null) ?? undefined);
+      this.listing = await device.listDevices(launch, this.adb());
     } catch (error) {
       this.post({ type: 'error', message: String(error instanceof Error ? error.message : error) });
       return;
@@ -94,11 +98,10 @@ export class DeviceView implements vscode.WebviewViewProvider {
       return;
     }
     try {
-      const png = await device.capture(launch, this.selected, this.setting<string | null>('adbPath', null) ?? undefined);
+      const png = await device.capture(launch, this.selected, this.adb());
       this.post({ type: 'frame', png: png.toString('base64') });
     } catch (error) {
       this.post({ type: 'error', message: String(error instanceof Error ? error.message : error) });
-      // The device may have gone away or another one booted, so look again.
       await this.relist();
     }
   }

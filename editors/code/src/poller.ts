@@ -1,8 +1,7 @@
 /** A capture takes about a second, so a tick never starts while the last is running: queued ones show a stale screen. */
 export class Poller {
   private timer: NodeJS.Timeout | undefined;
-  private running = false;
-  private wanted = false;
+  private busy = false;
 
   constructor(
     private readonly tick: () => Promise<void>,
@@ -10,32 +9,26 @@ export class Poller {
   ) {}
 
   start(): void {
-    if (this.wanted) {
-      return;
+    if (!this.timer) {
+      void this.run();
+      this.timer = setInterval(() => void this.run(), this.interval());
     }
-    this.wanted = true;
-    void this.loop();
   }
 
   stop(): void {
-    this.wanted = false;
-    clearTimeout(this.timer);
+    clearInterval(this.timer);
     this.timer = undefined;
   }
 
-  private async loop(): Promise<void> {
-    if (!this.wanted || this.running) {
+  private async run(): Promise<void> {
+    if (this.busy) {
       return;
     }
-    this.running = true;
-    const began = Date.now();
+    this.busy = true;
     try {
       await this.tick();
     } finally {
-      this.running = false;
-    }
-    if (this.wanted) {
-      this.timer = setTimeout(() => void this.loop(), Math.max(0, this.interval() - (Date.now() - began)));
+      this.busy = false;
     }
   }
 }

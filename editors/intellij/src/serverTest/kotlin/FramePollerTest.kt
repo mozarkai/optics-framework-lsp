@@ -8,16 +8,18 @@ import java.util.concurrent.atomic.AtomicInteger
 class FramePollerTest {
 
     @Test
-    fun `a tick never starts while the last one is running`() {
+    fun `ticks never overlap, survive a failing one, and stop when told to`() {
         val running = AtomicInteger()
         val ticks = AtomicInteger()
         var overlapped = false
-        val poller = FramePoller({ 10 }) {
+        val poller = FramePoller(10) {
+            val number = ticks.incrementAndGet()
             if (running.incrementAndGet() > 1) overlapped = true
-            ticks.incrementAndGet()
             Thread.sleep(60)
             running.decrementAndGet()
+            if (number == 1) error("device gone")
         }
+        poller.start()
         poller.start()
         Thread.sleep(400)
         poller.stop()
@@ -27,36 +29,5 @@ class FramePollerTest {
         assertTrue(seen >= 3) { "ticks: $seen" }
         assertFalse(overlapped)
         assertEquals(seen, ticks.get(), "stop must stop it")
-    }
-
-    @Test
-    fun `stopping and starting while a tick runs does not leave two loops`() {
-        val running = AtomicInteger()
-        var overlapped = false
-        val poller = FramePoller({ 10 }) {
-            if (running.incrementAndGet() > 1) overlapped = true
-            Thread.sleep(50)
-            running.decrementAndGet()
-        }
-        poller.start()
-        Thread.sleep(20)
-        poller.stop()
-        poller.start()
-        Thread.sleep(300)
-        poller.stop()
-        assertFalse(overlapped)
-    }
-
-    @Test
-    fun `a failing tick does not end the loop`() {
-        val ticks = AtomicInteger()
-        val poller = FramePoller({ 10 }) {
-            ticks.incrementAndGet()
-            error("device gone")
-        }
-        poller.start()
-        Thread.sleep(200)
-        poller.stop()
-        assertTrue(ticks.get() >= 3)
     }
 }

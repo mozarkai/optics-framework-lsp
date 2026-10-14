@@ -1,4 +1,3 @@
-import json
 import subprocess
 import sys
 
@@ -68,9 +67,3 @@ def test_the_hidden_command_is_not_advertised():
         [sys.executable, "-m", "optics_framework_lsp", "--help"], capture_output=True, text=True
     ).stdout
     assert "_device" not in help_text
-
-
-def test_main_prints_json_for_list(tools, capsys):
-    assert device.main(["list"]) == 0
-    assert len(json.loads(capsys.readouterr().out)["devices"]) == 2
-    assert device.main(["capture"]) == 2

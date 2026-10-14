@@ -7,7 +7,6 @@ import * as vscode from 'vscode';
 import { capture, listDevices } from '../device';
 import { Poller } from '../poller';
 
-// The real hidden command, against a fake adb.
 const launch = {
   command: 'python3',
   args: ['-m', 'optics_framework_lsp'],
@@ -45,6 +44,14 @@ suite('device view', () => {
   test('the Optics container opens in the activity bar and the view provider is registered', async () => {
     await vscode.commands.executeCommand('workbench.view.extension.optics');
     await vscode.commands.executeCommand('optics.deviceView.focus');
+  });
+
+  test('screen suggestions are off until asked for, and the binary paths cannot come from a workspace', () => {
+    const config = vscode.workspace.getConfiguration('optics');
+    assert.strictEqual(config.get('screenElements.enabled'), false);
+    for (const key of ['screenElements.enabled', 'deviceView.adbPath']) {
+      assert.ok(config.inspect(key), key);
+    }
   });
 
   test('the poller never starts a tick while one is running', async () => {

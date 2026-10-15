@@ -235,6 +235,7 @@ def did_open(ls: OpticsLanguageServer, params: types.DidOpenTextDocumentParams) 
     uri = params.text_document.uri
     if parse_sources([(uri, params.text_document.text)]).kinds.get(uri):
         SCREEN.get(_device_hint(uri, ls.folder_of(uri)))
+        _report_screen_problem(ls)
     _revalidate(ls, params.text_document.uri)
 
 
@@ -264,10 +265,23 @@ def did_close(ls: OpticsLanguageServer, params: types.DidCloseTextDocumentParams
 
 def _device_hint(uri: str, folder: str | None) -> str | None:
     """The environment beats the suite's config.yaml, and both beat whatever the device view picked."""
-    if serial := os.environ.get("OPTICS_ANDROID_SERIAL"):
-        return serial
+    if device := os.environ.get("OPTICS_DEVICE"):
+        return device
     path, root = to_fs_path(uri), to_fs_path(folder) if folder else None
-    return screen.config_serial(Path(path).parent, Path(root)) if path and root else None
+    return screen.config_device(Path(path).parent, Path(root)) if path and root else None
+
+
+_reported: set[str] = set()
+
+
+def _report_screen_problem(ls: LanguageServer) -> None:
+    """Said once per problem: the cache retries every minute and would repeat it."""
+    problem = SCREEN.problem
+    if problem and problem not in _reported:
+        _reported.add(problem)
+        ls.window_show_message(
+            types.ShowMessageParams(type=types.MessageType.Warning, message=f"Optics screen suggestions: {problem}")
+        )
 
 
 SCREEN = screen.Cache(enabled=os.environ.get("OPTICS_SCREEN_ELEMENTS", "").lower() in ("1", "true", "yes"))
@@ -288,6 +302,8 @@ def completions(
     files = ls.files(folder)
     sources = ls.sources(files)
     ast = parse_sources(sources)
+    screen_found = SCREEN.get(_device_hint(uri, folder)) if ast.kinds.get(uri) else ()
+    _report_screen_problem(ls)
     return completion.complete(
         ls.workspace.get_text_document(uri).source,
         params.position,
@@ -298,7 +314,7 @@ def completions(
         data_files=data_files(to_fs_path(folder), files, ast),
         apis=apis(sources),
         snippets=_snippets(ls),
-        screen=SCREEN.get(_device_hint(uri, folder)) if ast.kinds.get(uri) else (),
+        screen=screen_found,
     )
 
 

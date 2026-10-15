@@ -48,7 +48,11 @@ class OpticsLspDescriptor(project: Project, private val python: Path) :
             .withEnvironment("PYTHONPATH", pythonPath())
             // Otherwise the server writes __pycache__ into the payload we packaged.
             .withEnvironment("PYTHONDONTWRITEBYTECODE", "1")
-            .apply { if (OpticsSettings.getInstance().screenElements) withEnvironment("OPTICS_SCREEN_ELEMENTS", "1") }
+            .apply {
+                val settings = OpticsSettings.getInstance()
+                if (settings.screenElements) withEnvironment("OPTICS_SCREEN_ELEMENTS", "1")
+                if (settings.adbPath.isNotBlank()) withEnvironment("OPTICS_ADB", settings.adbPath)
+            }
 
     /** The platform compares descriptors to decide whether to restart; without these every CSV looks new. */
     override fun equals(other: Any?): Boolean =

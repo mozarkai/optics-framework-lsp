@@ -36,7 +36,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('optics.server.restart', () => restart(context)),
     vscode.commands.registerCommand('optics.mcp.configure', () => configureMcp(context)),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('optics.server') || event.affectsConfiguration('optics.screenElements')) {
+      if (event.affectsConfiguration('optics.server') || event.affectsConfiguration('optics.screenElements') || event.affectsConfiguration('optics.deviceView.adbPath')) {
         restart(context);
       }
     }),
@@ -230,8 +230,10 @@ function bundledEnv(context: vscode.ExtensionContext): NodeJS.ProcessEnv {
   const sep = process.platform === 'win32' ? ';' : ':';
   const libs = join(context.extensionPath, 'bundled', 'libs');
   const existing = process.env.PYTHONPATH;
-  const screen = vscode.workspace.getConfiguration('optics').get<boolean>('screenElements.enabled')
-    ? { OPTICS_SCREEN_ELEMENTS: '1' }
-    : {};
-  return { ...process.env, ...screen, PYTHONPATH: existing ? `${libs}${sep}${existing}` : libs };
+  const config = vscode.workspace.getConfiguration('optics');
+  const tools = {
+    ...(config.get<boolean>('screenElements.enabled') ? { OPTICS_SCREEN_ELEMENTS: '1' } : {}),
+    ...(config.get<string>('deviceView.adbPath') ? { OPTICS_ADB: config.get<string>('deviceView.adbPath') } : {}),
+  };
+  return { ...process.env, ...tools, PYTHONPATH: existing ? `${libs}${sep}${existing}` : libs };
 }

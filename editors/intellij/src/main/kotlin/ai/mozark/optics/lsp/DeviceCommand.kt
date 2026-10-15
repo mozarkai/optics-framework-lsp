@@ -29,6 +29,10 @@ object DeviceCommand {
 
     fun capture(python: Path, id: String): ByteArray = run(python, "capture", id)
 
+    fun select(python: Path, id: String) {
+        run(python, "select", id)
+    }
+
     private fun run(python: Path, vararg args: String): ByteArray {
         val line = GeneralCommandLine(listOf(python.toString()) + OpticsLspDescriptor.LAUNCH_ARGS + "_device" + args)
             .withEnvironment("PYTHONPATH", pythonPath())

@@ -83,8 +83,13 @@ private class DevicePanel(private val project: Project) : JPanel(BorderLayout())
             screen.fit = !zoom.isSelected
             zoom.text = if (zoom.isSelected) "Fit" else "Actual size"
         }
-        picker.addActionListener { selected = picker.selectedItem as? Device
-            selected?.let { PropertiesComponent.getInstance(project).setValue(remembered, it.id) } }
+        picker.addActionListener {
+            selected = picker.selectedItem as? Device
+            selected?.let {
+                PropertiesComponent.getInstance(project).setValue(remembered, it.id)
+                tell(it)
+            }
+        }
 
         val buttons = JPanel(GridLayout(1, 3, 4, 0)).apply { add(refresh); add(pause); add(zoom) }
         val bar = JPanel(BorderLayout(0, 4)).apply {
@@ -111,6 +116,14 @@ private class DevicePanel(private val project: Project) : JPanel(BorderLayout())
             result = OpticsPython.resolve()
         }
         return (result as? OpticsPython.Result.Ok)?.exe
+    }
+
+    // The language server is another process, and picks its device from this when nothing else does.
+    private fun tell(device: Device) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val exe = python() ?: return@executeOnPooledThread
+            runCatching { DeviceCommand.select(exe, device.id) }
+        }
     }
 
     private fun say(text: String) = ApplicationManager.getApplication().invokeLater { note.text = text }

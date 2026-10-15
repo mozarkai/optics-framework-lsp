@@ -94,10 +94,31 @@ def capture(device_id: str) -> bytes:
     raise DeviceError(f"unknown device: {device_id}")
 
 
+def _selected_file() -> Path:
+    return Path.home() / ".cache" / "optics-lsp" / "device"
+
+
+def select(device_id: str) -> None:
+    """The device view's choice, left for the language server, which is a different process."""
+    file = _selected_file()
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text(device_id)
+
+
+def selected() -> str | None:
+    try:
+        return _selected_file().read_text().strip() or None
+    except OSError:
+        return None
+
+
 def main(argv: list[str]) -> int:
     try:
         if argv[:1] == ["list"]:
             print(json.dumps(list_devices()))
+            return 0
+        if len(argv) == 2 and argv[0] == "select":
+            select(argv[1])
             return 0
         if len(argv) == 2 and argv[0] == "capture":
             sys.stdout.buffer.write(capture(argv[1]))
@@ -105,5 +126,5 @@ def main(argv: list[str]) -> int:
     except (DeviceError, OSError) as error:
         print(error, file=sys.stderr)
         return 1
-    print("usage: optics-lsp _device list | capture ID", file=sys.stderr)
+    print("usage: optics-lsp _device list | capture ID | select ID", file=sys.stderr)
     return 2

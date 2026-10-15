@@ -67,3 +67,11 @@ def test_the_hidden_command_is_not_advertised():
         [sys.executable, "-m", "optics_framework_lsp", "--help"], capture_output=True, text=True
     ).stdout
     assert "_device" not in help_text
+
+
+def test_the_device_views_pick_is_left_for_the_server_and_only_android_picks_are_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(device.Path, "home", lambda: tmp_path)
+    assert device.selected() is None
+
+    assert device.main(["select", "android:emulator-5554"]) == 0
+    assert device.selected() == "android:emulator-5554"

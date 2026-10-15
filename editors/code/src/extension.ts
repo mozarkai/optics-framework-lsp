@@ -36,7 +36,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('optics.server.restart', () => restart(context)),
     vscode.commands.registerCommand('optics.mcp.configure', () => configureMcp(context)),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('optics.server')) {
+      if (event.affectsConfiguration('optics.server') || event.affectsConfiguration('optics.screenElements')) {
         restart(context);
       }
     }),
@@ -230,5 +230,8 @@ function bundledEnv(context: vscode.ExtensionContext): NodeJS.ProcessEnv {
   const sep = process.platform === 'win32' ? ';' : ':';
   const libs = join(context.extensionPath, 'bundled', 'libs');
   const existing = process.env.PYTHONPATH;
-  return { ...process.env, PYTHONPATH: existing ? `${libs}${sep}${existing}` : libs };
+  const screen = vscode.workspace.getConfiguration('optics').get<boolean>('screenElements.enabled')
+    ? { OPTICS_SCREEN_ELEMENTS: '1' }
+    : {};
+  return { ...process.env, ...screen, PYTHONPATH: existing ? `${libs}${sep}${existing}` : libs };
 }

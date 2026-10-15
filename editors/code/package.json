@@ -88,6 +88,12 @@
           "default": "off",
           "description": "Log LSP messages sent to/from the server"
         },
+        "optics.screenElements.enabled": {
+          "scope": "machine",
+          "type": "boolean",
+          "default": false,
+          "description": "Suggest the elements on the connected Android emulator's screen as locators and element names in a suite. Off by default because it reads the device in the background (about every 10 seconds, and not while a test is running)."
+        },
         "optics.deviceView.refreshMs": {
           "scope": "window",
           "type": "number",
@@ -96,7 +102,7 @@
           "description": "How often the Device view asks for a new screenshot. A capture takes about a second on an Android emulator, so going lower mostly shows the same frame."
         },
         "optics.deviceView.adbPath": {
-          "scope": "window",
+          "scope": "machine",
           "type": [
             "string",
             "null"

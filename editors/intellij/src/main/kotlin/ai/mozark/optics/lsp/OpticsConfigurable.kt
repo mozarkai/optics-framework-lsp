@@ -3,6 +3,7 @@ package ai.mozark.optics.lsp
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 
@@ -16,6 +17,14 @@ class OpticsConfigurable : BoundConfigurable("Optics Framework") {
                 .comment(
                     "Leave empty to use OPTICS_LSP_PYTHON, then the first python3 on PATH. " +
                         "Python 3.12 or newer is required."
+                )
+        }
+        row {
+            checkBox("Suggest elements from the connected Android emulator's screen")
+                .bindSelected(OpticsSettings.getInstance()::screenElements)
+                .comment(
+                    "Reads the device in the background, about every 10 seconds and not while a " +
+                        "test is running. Takes effect when the language server restarts."
                 )
         }
         row("adb binary:") {

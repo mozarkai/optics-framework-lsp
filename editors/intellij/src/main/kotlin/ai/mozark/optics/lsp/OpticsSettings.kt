@@ -19,6 +19,10 @@ class OpticsSettings : PersistentStateComponent<OpticsSettings> {
     @JvmField
     var bridgePath: String = ""
 
+    /** Off by default: it reads the device in the background. */
+    @JvmField
+    var screenElements: Boolean = false
+
     /** For the Device tool window. Empty means the PATH and the usual SDK folders. */
     @JvmField
     var adbPath: String = ""

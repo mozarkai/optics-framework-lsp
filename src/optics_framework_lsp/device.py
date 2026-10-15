@@ -17,6 +17,10 @@ class DeviceError(Exception):
     pass
 
 
+class Missing(DeviceError):
+    """A tool the user has to install, which is worth telling them about."""
+
+
 def _adb() -> str | None:
     """An IDE started from the Dock rarely has the SDK on its PATH."""
 
@@ -34,6 +38,8 @@ def _run(command: list[str]) -> bytes:
         done = subprocess.run(command, capture_output=True, timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
         raise DeviceError(f"{Path(command[0]).name} did not answer within {TIMEOUT}s") from None
+    except OSError as error:
+        raise DeviceError(f"{Path(command[0]).name}: {error}") from None
     if done.returncode:
         raise DeviceError(done.stderr.decode(errors="replace").strip() or f"{Path(command[0]).name} failed")
     return done.stdout

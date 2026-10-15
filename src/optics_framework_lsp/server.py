@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from importlib.metadata import PackageNotFoundError, version
@@ -12,7 +13,7 @@ from lsprotocol import types
 from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path
 
-from . import completion
+from . import completion, screen
 from .parser.ast import AST
 from .keyword_catalog import CATALOG
 from .parser import SUITE, is_yaml, parse_sources
@@ -229,6 +230,11 @@ def _revalidate(ls: OpticsLanguageServer, uri: str) -> None:
 
 @server.feature(types.TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls: OpticsLanguageServer, params: types.DidOpenTextDocumentParams) -> None:
+    # Warm the cache, so the first completion already has a screen to offer. A yaml or csv that
+    # is not an optics suite is somebody else's file.
+    uri = params.text_document.uri
+    if parse_sources([(uri, params.text_document.text)]).kinds.get(uri):
+        SCREEN.get(_device_hint(uri, ls.folder_of(uri)))
     _revalidate(ls, params.text_document.uri)
 
 
@@ -256,6 +262,17 @@ def did_close(ls: OpticsLanguageServer, params: types.DidCloseTextDocumentParams
     _revalidate(ls, params.text_document.uri)
 
 
+def _device_hint(uri: str, folder: str | None) -> str | None:
+    """The environment beats the suite's config.yaml, and both beat whatever the device view picked."""
+    if serial := os.environ.get("OPTICS_ANDROID_SERIAL"):
+        return serial
+    path, root = to_fs_path(uri), to_fs_path(folder) if folder else None
+    return screen.config_serial(Path(path).parent, Path(root)) if path and root else None
+
+
+SCREEN = screen.Cache(enabled=os.environ.get("OPTICS_SCREEN_ELEMENTS", "").lower() in ("1", "true", "yes"))
+
+
 @server.feature(
     types.TEXT_DOCUMENT_COMPLETION,
     types.CompletionOptions(trigger_characters=[",", "{"]),
@@ -281,6 +298,7 @@ def completions(
         data_files=data_files(to_fs_path(folder), files, ast),
         apis=apis(sources),
         snippets=_snippets(ls),
+        screen=SCREEN.get(_device_hint(uri, folder)) if ast.kinds.get(uri) else (),
     )
 
 

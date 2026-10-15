@@ -37,6 +37,14 @@ export class DeviceView implements vscode.WebviewViewProvider {
     return vscode.workspace.getConfiguration('optics.deviceView').get<T>(key) ?? fallback;
   }
 
+  // The language server is another process, and picks its device from this when nothing else does.
+  private async tell(): Promise<void> {
+    const launch = await mcp.ensureLaunch();
+    if (launch && this.selected) {
+      await device.select(launch, this.selected).catch(() => undefined);
+    }
+  }
+
   private adb(): string | undefined {
     return this.setting<string | null>('adbPath', null) ?? undefined;
   }
@@ -56,6 +64,7 @@ export class DeviceView implements vscode.WebviewViewProvider {
       case 'select':
         this.selected = message.id;
         void this.context.workspaceState.update(LAST_DEVICE, message.id);
+        void this.tell();
         this.poller.stop();
         this.poller.start();
         break;
@@ -90,6 +99,7 @@ export class DeviceView implements vscode.WebviewViewProvider {
       this.selected = this.listing.devices[0]?.id;
     }
     this.post({ type: 'devices', ...this.listing, selected: this.selected });
+    void this.tell();
   }
 
   private async frame(): Promise<void> {

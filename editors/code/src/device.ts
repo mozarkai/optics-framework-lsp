@@ -35,6 +35,10 @@ export async function listDevices(launch: Executable, adbPath?: string): Promise
   return JSON.parse((await run(launch, ['list'], adbPath)).toString()) as Listing;
 }
 
+export async function select(launch: Executable, id: string): Promise<void> {
+  await run(launch, ['select', id], undefined);
+}
+
 export function capture(launch: Executable, id: string, adbPath?: string): Promise<Buffer> {
   return run(launch, ['capture', id], adbPath);
 }

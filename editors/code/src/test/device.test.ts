@@ -1,10 +1,10 @@
 import * as assert from 'assert';
-import { chmodSync, mkdtempSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
 import * as vscode from 'vscode';
-import { capture, listDevices } from '../device';
+import { capture, listDevices, select } from '../device';
 import { Poller } from '../poller';
 
 const launch = {
@@ -35,6 +35,14 @@ suite('device view', () => {
     assert.ok(listing.devices.some((d) => d.id === 'android:emulator-5554' && d.name === 'Pixel 8'));
     const png = await capture(launch, 'android:emulator-5554', adb);
     assert.strictEqual(png.subarray(1, 4).toString(), 'PNG');
+  });
+
+  test('the picked device is left where the language server reads it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'optics-home-'));
+    await select({ ...launch, options: { env: { ...launch.options.env, HOME: home } } }, 'android:emulator-5554');
+    const file = join(home, '.cache', 'optics-lsp', 'device');
+    assert.ok(existsSync(file));
+    assert.strictEqual(readFileSync(file, 'utf8'), 'android:emulator-5554');
   });
 
   test('a failing capture surfaces the message the command printed', async () => {

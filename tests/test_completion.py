@@ -4,6 +4,7 @@ from lsprotocol.types import CompletionItemKind, MarkupKind, Position
 from optics_framework_lsp.completion import complete, signature
 from optics_framework_lsp.keyword_catalog import Keyword
 from optics_framework_lsp.parser.csv_parser import parse_csv_sources
+from optics_framework_lsp.screen import OnScreen
 
 CATALOG = {
     "press element": Keyword(
@@ -427,3 +428,45 @@ def test_images_are_offered_in_any_element_id_column():
         images=["btn.png"],
     )
     assert [i.label for i in items] == ["btn.png"]
+
+
+SCREEN = [
+    OnScreen('//android.widget.TextView[@text="Optics, Super"]', "on screen: TextView, text Optics, Super"),
+    OnScreen('//android.widget.Button[@resource-id="submit"]', "on screen: Button, resource-id submit"),
+]
+
+
+def _with_screen(base, line, *, screen=SCREEN):
+    text = base + line
+    ast = parse_csv_sources([("file:///w/0.csv", text)])
+    return complete(
+        text, Position(line=base.count("\n"), character=len(line)), ast, CATALOG, screen=screen
+    )
+
+
+def test_an_id_cell_offers_the_locators_on_screen_written_as_csv_cells():
+    items = _with_screen(ELEMENTS, "name,")
+    (item,) = [i for i in items if i.label.endswith('[@text="Optics, Super"]')]
+
+    assert item.kind == CompletionItemKind.Field
+    assert item.text_edit.new_text == '"//android.widget.TextView[@text=""Optics, Super""]"'
+    assert item.detail.startswith("on screen")
+
+
+def test_a_half_typed_quoted_cell_is_replaced_whole_including_its_quote():
+    line = 'name,"//android.widget.But'
+    (item,) = [i for i in _with_screen(ELEMENTS, line) if "Button" in i.label]
+
+    assert item.text_edit.range.start.character == len("name,")
+    assert item.text_edit.range.end.character == len(line)
+
+
+def test_an_element_on_screen_ranks_first_in_a_param_slot():
+    elements = 'element_name,element_id\nsubmit,"//android.widget.Button[@resource-id=""submit""]"\nbtn,//a\n'
+    modules = "module_name,module_step,param_1\nLogin,Press Element,"
+    ast = parse_csv_sources([("file:///w/0.csv", modules), ("file:///w/1.csv", elements)])
+    items = complete(modules, Position(line=1, character=len("Login,Press Element,")), ast, CATALOG, screen=SCREEN)
+    ranked = {i.label: i.sort_text for i in items}
+
+    assert ranked["submit"] == "0submit"
+    assert ranked.get("btn") is None

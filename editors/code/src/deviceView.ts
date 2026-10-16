@@ -154,9 +154,13 @@ export class DeviceView implements vscode.WebviewViewProvider {
     if (!this.remote() || !suite) {
       return;
     }
+    const asked = this.selected;
     const began = Date.now();
     const shot: Shot = await this.hubShot(suite).catch((error) => ({ error: String(error) }));
     this.slowest = Date.now() - began;
+    if (this.selected !== asked) {
+      return;
+    }
     this.post(shot.error ? { type: 'error', message: shot.error } : { type: 'frame', png: shot.png });
   }
 
@@ -165,9 +169,12 @@ export class DeviceView implements vscode.WebviewViewProvider {
     if (!launch || !this.selected) {
       return;
     }
+    const asked = this.selected;
     try {
-      const png = await device.capture(launch, this.selected, this.adb());
-      this.post({ type: 'frame', png: png.toString('base64') });
+      const png = await device.capture(launch, asked, this.adb());
+      if (this.selected === asked) {
+        this.post({ type: 'frame', png: png.toString('base64') });
+      }
     } catch (error) {
       this.post({ type: 'error', message: String(error instanceof Error ? error.message : error) });
       await this.relist();

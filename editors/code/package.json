@@ -93,6 +93,12 @@
           "default": "off",
           "description": "Log LSP messages sent to/from the server"
         },
+        "optics.autoInstall": {
+          "scope": "machine",
+          "type": "boolean",
+          "default": true,
+          "description": "Download a helper tool that is missing: today Android's platform-tools (adb) from Google, checked against a pinned checksum. Turn off to use only your own, and set optics.deviceView.adbPath."
+        },
         "optics.screenElements.enabled": {
           "scope": "machine",
           "type": "boolean",

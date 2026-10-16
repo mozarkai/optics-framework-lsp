@@ -56,7 +56,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('optics.mcp.configure', () => configureMcp(context)),
     vscode.commands.registerCommand('optics.screen.read', readScreen),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('optics.server') || event.affectsConfiguration('optics.screenElements') || event.affectsConfiguration('optics.deviceView.adbPath')) {
+      if (event.affectsConfiguration('optics.server') || event.affectsConfiguration('optics.screenElements') || event.affectsConfiguration('optics.autoInstall') || event.affectsConfiguration('optics.deviceView.adbPath')) {
         restart(context);
       }
     }),
@@ -266,6 +266,7 @@ function bundledEnv(context: vscode.ExtensionContext): NodeJS.ProcessEnv {
   const config = vscode.workspace.getConfiguration('optics');
   const tools = {
     ...(config.get<boolean>('screenElements.enabled') ? { OPTICS_SCREEN_ELEMENTS: '1' } : {}),
+    ...(config.get<boolean>('autoInstall') === false ? { OPTICS_AUTO_INSTALL: '0' } : {}),
     ...(config.get<string>('deviceView.adbPath') ? { OPTICS_ADB: config.get<string>('deviceView.adbPath') } : {}),
   };
   return { ...process.env, ...tools, PYTHONPATH: existing ? `${libs}${sep}${existing}` : libs };

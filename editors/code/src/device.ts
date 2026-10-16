@@ -19,7 +19,7 @@ function run(launch: Executable, args: string[], adbPath: string | undefined): P
     execFile(
       launch.command,
       [...(launch.args ?? []), '_device', ...args],
-      { env, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, timeout: 30_000 },
+      { env, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
       (error, stdout, stderr) => {
         if (error) {
           reject(new Error(stderr.toString().trim() || error.message));

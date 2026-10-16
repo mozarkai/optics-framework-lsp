@@ -12,7 +12,7 @@ class FramePollerTest {
         val running = AtomicInteger()
         val ticks = AtomicInteger()
         var overlapped = false
-        val poller = FramePoller(10) {
+        val poller = FramePoller({ 10 }) {
             val number = ticks.incrementAndGet()
             if (running.incrementAndGet() > 1) overlapped = true
             Thread.sleep(60)

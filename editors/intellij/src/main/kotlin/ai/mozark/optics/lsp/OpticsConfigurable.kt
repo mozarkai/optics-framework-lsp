@@ -27,6 +27,11 @@ class OpticsConfigurable : BoundConfigurable("Optics Framework") {
                         "test is running. Takes effect when the language server restarts."
                 )
         }
+        row {
+            checkBox("Download a missing helper tool (Android platform-tools from Google)")
+                .bindSelected(OpticsSettings.getInstance()::autoInstall)
+                .comment("Checked against a pinned checksum. Turn off to use only your own, and set the adb binary below.")
+        }
         row("adb binary:") {
             textField()
                 .bindText(OpticsSettings.getInstance()::adbPath)

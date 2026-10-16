@@ -51,6 +51,7 @@ class OpticsLspDescriptor(project: Project, private val python: Path) :
             .apply {
                 val settings = OpticsSettings.getInstance()
                 if (settings.screenElements) withEnvironment("OPTICS_SCREEN_ELEMENTS", "1")
+                if (!settings.autoInstall) withEnvironment("OPTICS_AUTO_INSTALL", "0")
                 if (settings.adbPath.isNotBlank()) withEnvironment("OPTICS_ADB", settings.adbPath)
             }
 

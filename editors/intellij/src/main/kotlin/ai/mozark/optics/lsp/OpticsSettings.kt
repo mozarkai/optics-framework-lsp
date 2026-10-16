@@ -23,6 +23,10 @@ class OpticsSettings : PersistentStateComponent<OpticsSettings> {
     @JvmField
     var screenElements: Boolean = false
 
+    /** A missing helper tool is downloaded unless this is off. */
+    @JvmField
+    var autoInstall: Boolean = true
+
     /** For the Device tool window. Empty means the PATH and the usual SDK folders. */
     @JvmField
     var adbPath: String = ""

@@ -14,7 +14,7 @@ data class Listing(val devices: List<Device>, val notes: List<String>)
 /** Blocking: call it off the EDT. */
 object DeviceCommand {
 
-    private const val TIMEOUT_SECONDS = 30L
+    private const val TIMEOUT_SECONDS = 120L
 
     fun list(python: Path): Listing {
         val root = JsonParser.parseString(String(run(python, "list"))).asJsonObject
@@ -38,6 +38,7 @@ object DeviceCommand {
             .withEnvironment("PYTHONPATH", pythonPath())
             .withEnvironment("PYTHONDONTWRITEBYTECODE", "1")
         OpticsSettings.getInstance().adbPath.takeIf { it.isNotBlank() }?.let { line.withEnvironment("OPTICS_ADB", it) }
+        if (!OpticsSettings.getInstance().autoInstall) line.withEnvironment("OPTICS_AUTO_INSTALL", "0")
         val process = line.createProcess()
         // Stderr is a line or two, so reading stdout to the end first cannot block on a full pipe.
         val out = process.inputStream.readAllBytes()

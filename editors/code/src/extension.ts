@@ -44,9 +44,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   const deviceView = new DeviceView(context, hubDevice, suiteDevice, hubShot, () => suite);
+  const configs = vscode.workspace.createFileSystemWatcher('**/config.yaml');
   context.subscriptions.push(
     mcp.register(context, () => resolveServerOptions(context)),
     vscode.window.registerWebviewViewProvider(VIEW_ID, deviceView),
+    configs,
+    configs.onDidChange(() => deviceView.suiteChanged()),
+    configs.onDidCreate(() => deviceView.suiteChanged()),
+    configs.onDidDelete(() => deviceView.suiteChanged()),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor && /\.(csv|ya?ml)$/i.test(editor.document.fileName) && suite !== editor.document.uri.toString()) {
         suite = editor.document.uri.toString();

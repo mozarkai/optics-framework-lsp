@@ -215,7 +215,7 @@ private class DevicePanel(private val project: Project) : JPanel(BorderLayout())
         val exe = python() ?: return
         try {
             val image = ImageIO.read(ByteArrayInputStream(DeviceCommand.capture(exe, device.id)))
-            ApplicationManager.getApplication().invokeLater { screen.image = image; note.text = "" }
+            ApplicationManager.getApplication().invokeLater { if (selected == device) { screen.image = image; note.text = "" } }
         } catch (error: Exception) {
             say(error.message ?: "Could not capture the screen")
             relist()
@@ -224,9 +224,11 @@ private class DevicePanel(private val project: Project) : JPanel(BorderLayout())
 
     private fun picture() {
         if (!remote()) return
+        val asked = selected
         val began = System.currentTimeMillis()
         val shot = runCatching { RemoteHub.screenshot(project, suite() ?: return) }.getOrElse { return say(it.message ?: "Could not read the device") }
         slowest = System.currentTimeMillis() - began
+        if (selected != asked) return
         shot["error"]?.let { return say(it.asString) }
         val image = ImageIO.read(ByteArrayInputStream(Base64.getDecoder().decode(shot["png"].asString)))
         ApplicationManager.getApplication().invokeLater { screen.image = image }

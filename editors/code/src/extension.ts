@@ -25,6 +25,7 @@ let client: LanguageClient | undefined;
 let suite: string | undefined = vscode.window.activeTextEditor?.document.uri.toString();
 
 const hubDevice = async (uri: string) => ((await ask('optics.remoteDevice', [uri])) as never) ?? null;
+const suiteDevice = async (uri: string) => ((await ask('optics.suiteDevice', [uri])) as string | null) ?? null;
 const hubShot = (uri: string) => ask('optics.remoteScreen', [uri]) as Promise<Shot>;
 
 function ask(command: string, args: string[]): Promise<unknown> {
@@ -42,7 +43,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     python = undefined;
   }
 
-  const deviceView = new DeviceView(context, hubDevice, hubShot, () => suite);
+  const deviceView = new DeviceView(context, hubDevice, suiteDevice, hubShot, () => suite);
   context.subscriptions.push(
     mcp.register(context, () => resolveServerOptions(context)),
     vscode.window.registerWebviewViewProvider(VIEW_ID, deviceView),

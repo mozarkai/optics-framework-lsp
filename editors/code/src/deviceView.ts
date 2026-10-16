@@ -14,6 +14,8 @@ export class DeviceView implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private listing: device.Listing = { devices: [], notes: [] };
   private selected: string | undefined;
+  // Applied once per value, so picking another device by hand sticks until the suite names a different one.
+  private applied: string | undefined;
   private paused = false;
   // A hub screenshot takes seconds to ten, so it waits twice as long as it last took.
   private slowest = 0;
@@ -23,6 +25,7 @@ export class DeviceView implements vscode.WebviewViewProvider {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly hubDevice: (uri: string) => Promise<device.Device | null>,
+    private readonly suiteDevice: (uri: string) => Promise<string | null>,
     private readonly hubShot: (uri: string) => Promise<Shot>,
     private readonly suite: () => string | undefined
   ) {
@@ -129,8 +132,18 @@ export class DeviceView implements vscode.WebviewViewProvider {
     if (hub) {
       this.listing.devices.push(hub);
     }
+    const named = suite ? await this.suiteDevice(suite).catch(() => null) : null;
+    const before = this.selected;
+    if (named && named !== this.applied && this.listing.devices.some((d) => d.id === named)) {
+      this.selected = this.applied = named;
+    }
     if (!this.listing.devices.some((d) => d.id === this.selected)) {
       this.selected = this.listing.devices[0]?.id;
+    }
+    if (this.selected !== before && !this.paused && this.view?.visible) {
+      this.stop();
+      this.post({ type: 'cleared' });
+      this.start();
     }
     this.post({ type: 'devices', ...this.listing, selected: this.selected });
     void this.tell();

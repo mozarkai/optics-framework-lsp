@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import dataclasses
+import datetime
 import json
 import sys
 import threading
@@ -8,12 +11,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
+from .xpaths import Xpaths
 from .device import DeviceError, Missing, _adb, _android, _ios, _run, selected
 
 # Longer text is a paragraph, which nobody locates an element by.
@@ -26,33 +29,58 @@ class OnScreen:
     detail: str
 
 
-def _quoted(value: str) -> str | None:
-    """XPath has no escape for a quote, so a value holding both cannot be written."""
-    if '"' not in value:
-        return f'"{value}"'
-    return f"'{value}'" if "'" not in value else None
+ACTIONABLE = (
+    "Button", "Switch", "CheckBox", "RadioButton", "ToggleButton", "SeekBar", "Slider",
+    "EditText", "TextField", "SecureTextField", "SearchField", "XCUIElementTypeCell", "XCUIElementTypeLink", "XCUIElementTypeTab",
+)
+
+
+def _label(node: ET.Element) -> tuple[str, str]:
+    for key in ("text", "content-desc", "name", "label", "value", "resource-id"):
+        value = (node.get(key) or "").strip()
+        if value:
+            return key, value.rsplit("/", 1)[-1] if key == "resource-id" else value
+    return "", ""
+
+
+def _android_tree(xml: str) -> ET.Element:
+    """`uiautomator dump` names every element `node`, where Appium names it by class, and optics's xpaths are Appium's."""
+    root = ET.fromstring(xml)
+    for node in root.iter("node"):
+        node.tag = node.get("class") or "android.view.View"
+    return root
+
+
+def _shown(node: ET.Element) -> tuple[str, str] | None:
+    if node.tag in ("XCUIElementTypeApplication", "XCUIElementTypeWindow", "AppiumAUT", "hierarchy"):
+        return None
+    if node.get("visible") == "false" or node.get("displayed") == "false":
+        return None
+    key, label = _label(node)
+    if len(label) > MAX_TEXT or not (label or any(f in node.tag for f in ACTIONABLE) or node.get("clickable") == "true"):
+        return None
+    return key, label
+
+
+def _suggestions(root: ET.Element, ios: bool) -> list[OnScreen]:
+    paths = Xpaths(root)
+    found: dict[str, OnScreen] = {}
+    for node in root.iter():
+        shown = _shown(node)
+        if node is root or shown is None:
+            continue
+        key, label = shown
+        kind = node.tag.rsplit(".", 1)[-1].removeprefix("XCUIElementType")
+        what = f"{key} {label}" if label else "no name"
+        if ios and node.get("name") and len(node.get("name")) <= MAX_TEXT:
+            found.setdefault(node.get("name"), OnScreen(node.get("name"), f"on screen: {kind}, name {node.get('name')}"))
+        locator = paths.of(node)
+        found.setdefault(locator, OnScreen(locator, f"on screen: {kind}, {what}"))
+    return list(found.values())
 
 
 def parse(xml: str) -> list[OnScreen]:
-    nodes = []
-    for node in ET.fromstring(xml).iter("node"):
-        for attr in ("resource-id", "content-desc", "text"):
-            value = node.get(attr, "").strip()
-            if value and len(value) <= MAX_TEXT and _quoted(value):
-                nodes.append((node.get("class", "android.view.View"), attr, value))
-                break
-
-    totals = Counter(nodes)
-    seen: Counter = Counter()
-    found: dict[str, OnScreen] = {}
-    for key in nodes:
-        node_class, attr, value = key
-        seen[key] += 1
-        path = f"//{node_class}[@{attr}={_quoted(value)}]"
-        locator = path if totals[key] == 1 else f"({path})[{seen[key]}]"
-        short = node_class.rsplit(".", 1)[-1]
-        found.setdefault(locator, OnScreen(locator, f"on screen: {short}, {attr} {value}"))
-    return list(found.values())
+    return _suggestions(_android_tree(xml), ios=False)
 
 
 def dump(serial: str) -> str:
@@ -155,64 +183,59 @@ def _caps(block: dict, udid: str) -> dict:
     return {key if key == "platformName" or ":" in key else f"appium:{key}": value for key, value in caps.items()}
 
 
-def _appium_source(url: str, block: dict, udid: str) -> str:
-    """WebDriverAgent stays up after the session closes, so the next read skips this."""
+def open_session(url: str, block: dict, udid: str) -> str:
     try:
         session = _http("POST", f"{url}/session", {"capabilities": {"alwaysMatch": _caps(block, udid)}}, timeout=180)
     except urllib.error.HTTPError as error:
         raise DeviceError(f"Appium refused a session: {error.read().decode(errors='replace')[:200]}") from None
     except OSError:
         raise Missing(f"Appium is not running at {url}. Start it, or set the url in config.yaml.") from None
-    sid = session["value"]["sessionId"]
-    try:
-        return _http("GET", f"{url}/session/{sid}/source")["value"]
-    finally:
+    return session["value"]["sessionId"]
+
+
+def _appium_source(url: str, block: dict, udid: str) -> str:
+    """WebDriverAgent stays up after the session closes, so the next read skips this."""
+    sid = open_session(url, block, udid)
+
+    def close() -> None:
         try:
-            _http("DELETE", f"{url}/session/{sid}")
+            _http("DELETE", f"{url}/session/{sid}", timeout=60)
         except OSError:
             pass
+
+    try:
+        return _http("GET", f"{url}/session/{sid}/source", timeout=120)["value"]
+    finally:
+        threading.Thread(target=close, daemon=True).start()
 
 
 def _ios_source(udid: str, block: dict | None) -> str:
     block = block or {}
     url = str(block.get("url") or DEFAULT_APPIUM).rstrip("/")
-    if urllib.parse.urlparse(url).hostname not in LOCAL:
-        raise Missing("Element suggestions read a local Appium only. This suite's Appium is remote.")
     port = int((block.get("capabilities") or {}).get("wdaLocalPort") or 8100)
     return _wda_source(port) or _appium_source(url, block, udid)
 
 
-def _steps(app: ET.Element) -> list[tuple[ET.Element, list[str]]]:
-    found: list[tuple[ET.Element, list[str]]] = []
+def is_remote(preferred: str | None) -> bool:
+    url = str((_appium.get(preferred or "") or {}).get("url") or DEFAULT_APPIUM)
+    return urllib.parse.urlparse(url).hostname not in LOCAL
 
-    def walk(parent: ET.Element, steps: list[str]) -> None:
-        for child in parent:
-            twins = [c for c in parent if c.tag == child.tag]
-            here = steps + [child.tag + (f"[{twins.index(child) + 1}]" if len(twins) > 1 else "")]
-            found.append((child, here))
-            walk(child, here)
 
-    walk(app, [])
-    return found
+def _check_token(block: dict) -> None:
+    """The hub's token is a day-long JWT, and a refused session says nothing about why."""
+    secret = ((block.get("capabilities") or {}).get("mozark:options") or {}).get("secret") or ""
+    try:
+        payload = secret.split(".")[1]
+        expiry = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))["exp"]
+    except (IndexError, ValueError, KeyError, TypeError):
+        return
+    if expiry < time.time():
+        when = datetime.datetime.fromtimestamp(expiry).strftime("%d %b %H:%M")
+        raise Missing(f"The hub token in config.yaml expired on {when}. Paste a fresh one.")
 
 
 def parse_ios_source(xml: str) -> list[OnScreen]:
-    """The name as suites write it, and the path from the application as Appium Inspector writes it."""
-    app = next(ET.fromstring(xml).iter("XCUIElementTypeApplication"), None)
-    if app is None:
-        return []
-    name = _quoted(app.get("name") or "")
-    root = f"//XCUIElementTypeApplication[@name={name}]" if name else "//XCUIElementTypeApplication"
-    found: dict[str, OnScreen] = {}
-    for node, steps in _steps(app):
-        label = node.get("name") or node.get("label") or ""
-        if node.tag == "XCUIElementTypeWindow" or node.get("visible") == "false" or not label.strip() or len(label) > MAX_TEXT:
-            continue
-        kind = node.tag.removeprefix("XCUIElementType")
-        found.setdefault(label, OnScreen(label, f"on screen: {kind}, name {label}"))
-        path = f"{root}/{'/'.join(steps)}"
-        found.setdefault(path, OnScreen(path, f"on screen: {kind}, path to {label}"))
-    return list(found.values())
+    return _suggestions(ET.fromstring(xml), ios=True)
 
 
 def _resolve(preferred: str | None) -> tuple[str, str] | None:
@@ -234,8 +257,14 @@ def snapshot(preferred: str | None = None) -> list[OnScreen]:
     if not target:
         return []
     platform, device = target
+    block = _appium.get(f"{platform}:{device}")
+    if is_remote(f"{platform}:{device}"):
+        from .remote import HELD
+
+        xml = HELD.source(f"{platform}:{device}", block or {}, device)
+        return parse_ios_source(xml) if platform == "ios" else parse(xml)
     if platform == "ios":
-        return parse_ios_source(_ios_source(device, _appium.get(f"ios:{device}")))
+        return parse_ios_source(_ios_source(device, block))
     if _busy(device):
         raise Busy(f"{device} is in use by a test")
     return parse(dump(device))
@@ -245,23 +274,59 @@ class Cache:
     """Completion must not wait ~3s for a dump, so it reads the last one and a stale cache
     refreshes in the background. Off unless asked: it touches the user's device."""
 
-    def __init__(self, fetch=snapshot, ttl: float = 10.0, backoff: float = 60.0, enabled: bool = False) -> None:
+    def __init__(
+        self, fetch=snapshot, ttl: float = 10.0, backoff: float = 60.0, enabled: bool = False,
+        remote=lambda preferred: False, remote_ttl: float = 120.0,
+    ) -> None:
         self._fetch = fetch
         self._ttl = ttl
         self._backoff = backoff
         self._enabled = enabled
+        self._remote = remote
+        self._remote_ttl = remote_ttl
         self._for: str | None = None
         self._found: list[OnScreen] = []
         self._next = float("-inf")
         self._busy = threading.Lock()
+        self._read: dict[str | None, tuple[list[OnScreen], float]] = {}
         self.problem: str | None = None
 
+    def _age(self, preferred: str | None) -> float | None:
+        read = self._read.get(preferred)
+        return time.monotonic() - read[1] if read else None
+
+    def _asked(self, preferred: str | None) -> list[OnScreen] | None:
+        age = self._age(preferred)
+        if age is None or age > self._remote_ttl:
+            return None
+        return [dataclasses.replace(s, detail=f"{s.detail}, read {_ago(age)}") for s in self._read[preferred][0]]
+
     def get(self, preferred: str | None = None) -> list[OnScreen]:
+        asked = self._asked(preferred)
+        if self._remote(preferred):
+            return asked or []
+        if asked is not None and not self._enabled:
+            return asked
         if preferred != self._for:
             self._for, self._found, self._next = preferred, [], float("-inf")
         if self._enabled and time.monotonic() >= self._next and self._busy.acquire(blocking=False):
             threading.Thread(target=self._refresh, args=(preferred,), daemon=True).start()
         return self._found
+
+    def hint(self, preferred: str | None) -> str | None:
+        """Why a remote device offers nothing, since it is only ever read when asked."""
+        if not self._remote(preferred):
+            return None
+        age = self._age(preferred)
+        if age is None:
+            return "Read this device's screen: Optics: Read Screen Elements"
+        return f"Screen read {_ago(age)}. Read it again: Optics: Read Screen Elements" if age > self._remote_ttl else None
+
+    def read_now(self, preferred: str | None) -> list[OnScreen]:
+        """Blocks for as long as the device takes, so a caller keeps it off the thread that answers the editor."""
+        found = self._fetch(preferred)
+        self._read[preferred] = (found, time.monotonic())
+        return found
 
     def _refresh(self, preferred: str | None) -> None:
         wait = self._ttl
@@ -279,3 +344,7 @@ class Cache:
                 self._found = found
             self._next = time.monotonic() + wait
             self._busy.release()
+
+
+def _ago(seconds: float) -> str:
+    return f"{int(seconds)} s ago" if seconds < 90 else f"{int(seconds // 60)} min ago"

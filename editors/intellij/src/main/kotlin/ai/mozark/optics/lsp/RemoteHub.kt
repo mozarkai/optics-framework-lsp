@@ -17,6 +17,9 @@ object RemoteHub {
         return Device(found["id"].asString, found["name"].asString, found["platform"].asString)
     }
 
+    fun suiteDevice(project: Project, uri: String): String? =
+        ask(project, "optics.suiteDevice", uri)?.takeIf { it.isJsonPrimitive }?.asString
+
     fun screenshot(project: Project, uri: String): JsonObject =
         ask(project, "optics.remoteScreen", uri) as? JsonObject ?: JsonObject()
 

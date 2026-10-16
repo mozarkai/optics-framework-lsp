@@ -80,6 +80,9 @@ private class DevicePanel(private val project: Project) : JPanel(BorderLayout())
     @Volatile private var selected: Device? = null
     @Volatile private var lastSuite: String? = null
 
+    // Applied once per value, so picking another device by hand sticks until the suite names a different one.
+    @Volatile private var applied: String? = null
+
     // A hub screenshot takes seconds to ten, so it waits twice as long as it last took.
     @Volatile private var slowest = 0L
     private val poller = FramePoller({ 250L }) { frame() }
@@ -183,7 +186,10 @@ private class DevicePanel(private val project: Project) : JPanel(BorderLayout())
             val hub = suite()?.let { runCatching { RemoteHub.device(project, it) }.getOrNull() }
             val devices = listing.devices + listOfNotNull(hub)
             val last = PropertiesComponent.getInstance(project).getValue(remembered)
-            val pick = devices.firstOrNull { it.id == selected?.id }
+            val named = suite()?.let { runCatching { RemoteHub.suiteDevice(project, it) }.getOrNull() }
+                ?.takeIf { it != applied }?.let { id -> devices.firstOrNull { it.id == id } }
+            if (named != null) applied = named.id
+            val pick = named ?: devices.firstOrNull { it.id == selected?.id }
                 ?: devices.firstOrNull { it.id == last } ?: devices.firstOrNull()
             selected = pick
             ApplicationManager.getApplication().invokeLater {

@@ -547,6 +547,13 @@ def remote_device(ls: OpticsLanguageServer, uri: str = "") -> dict | None:
     return {"id": f"remote:{device}", "name": f"{caps.get('deviceName') or udid} (hub)", "platform": platform}
 
 
+@server.command("optics.suiteDevice")
+def suite_device(ls: OpticsLanguageServer, uri: str = "") -> str | None:
+    """The panel lists a hub device under a `remote:` id."""
+    device = _device_hint(uri, ls.folder_of(uri))
+    return f"remote:{device}" if device and screen.is_remote(device) else device
+
+
 @server.command("optics.remoteScreen")
 async def remote_screen(ls: OpticsLanguageServer, uri: str = "") -> dict:
     """What the Device view shows of a hub device. It is slow, so the editor asks for it as often as it can bear."""

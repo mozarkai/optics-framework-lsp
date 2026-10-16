@@ -9,6 +9,7 @@ from collections.abc import Iterable, Sequence
 from typing import Literal
 
 from lsprotocol.types import (
+    Command,
     CompletionItem,
     CompletionItemKind,
     Hover,
@@ -233,6 +234,22 @@ def _on_screen(cursor: Cursor, screen: Sequence[OnScreen]) -> list[CompletionIte
     ]
 
 
+def _read_screen(cursor: Cursor, uri: str, hint: str | None) -> list[CompletionItem]:
+    """Accepting it runs the command, since a remote device is read only when asked."""
+    if not hint:
+        return []
+    return [
+        CompletionItem(
+            label=hint,
+            kind=CompletionItemKind.Event,
+            sort_text="~",
+            filter_text=cursor.partial,
+            text_edit=cursor.cell(cursor.partial),
+            command=Command(title=hint, command="optics.readScreen", arguments=[uri]),
+        )
+    ]
+
+
 def _rank_on_screen(items: list[CompletionItem], ast: AST, screen: Sequence[OnScreen]) -> None:
     here = {found.locator for found in screen}
     names = {e.name for e in ast.elements if any(l.text in here for l in e.locators)}
@@ -445,6 +462,7 @@ def complete(
     apis: Sequence[str] = (),
     snippets: bool = False,
     screen: Sequence[OnScreen] = (),
+    screen_hint: str | None = None,
 ) -> list[CompletionItem]:
     if is_yaml(uri):
         return _complete_yaml(
@@ -501,7 +519,11 @@ def complete(
     # locator, the bare filename of a template somewhere in the project. Any
     # `element_id*` column holds one, as `read_elements` reads them all.
     if cursor.header_at(cursor.column).startswith("element_id"):
-        return _listing(cursor, images, CompletionItemKind.File, "template image") + _on_screen(cursor, screen)
+        return (
+            _listing(cursor, images, CompletionItemKind.File, "template image")
+            + _on_screen(cursor, screen)
+            + _read_screen(cursor, uri, screen_hint)
+        )
 
     if cursor.column == cursor.column_of("test_case"):
         return _test_cases(cursor, ast)

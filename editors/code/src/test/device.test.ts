@@ -62,6 +62,22 @@ suite('device view', () => {
     }
   });
 
+  test('the poller asks how long to wait each time, so a slow read can slow it down', async () => {
+    const stamps: number[] = [];
+    let wait = 20;
+    const poller = new Poller(async () => {
+      stamps.push(Date.now());
+      wait = 150;
+    }, () => wait);
+    poller.start();
+    await new Promise((done) => setTimeout(done, 450));
+    poller.stop();
+
+    const gaps = stamps.slice(1).map((t, i) => t - stamps[i]);
+    assert.ok(gaps.length >= 2, `gaps: ${gaps}`);
+    assert.ok(gaps.every((gap) => gap >= 120), `gaps: ${gaps}`);
+  });
+
   test('the poller never starts a tick while one is running', async () => {
     let running = 0;
     let overlapped = false;

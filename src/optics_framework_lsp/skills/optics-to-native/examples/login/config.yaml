@@ -1,0 +1,6 @@
+driver_sources:
+  - appium:
+      capabilities:
+        appPackage: com.example.app
+        appActivity: .MainActivity
+        deviceName: emulator-5554

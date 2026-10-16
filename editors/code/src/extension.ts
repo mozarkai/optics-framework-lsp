@@ -141,7 +141,7 @@ async function configureMcp(context: vscode.ExtensionContext): Promise<void> {
   // The skill is worth installing regardless: Cursor and Gemini CLI read the same directory, and
   // it is what tells an agent the framework post-dates its training data.
   const skilled = await clients.installSkill(
-    vscode.Uri.joinPath(context.extensionUri, 'skills', 'optics-framework', 'SKILL.md')
+    vscode.Uri.joinPath(context.extensionUri, 'skills')
   );
 
   if (!(await clients.claudeCodeAvailable())) {

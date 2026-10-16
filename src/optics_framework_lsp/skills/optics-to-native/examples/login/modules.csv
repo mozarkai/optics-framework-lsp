@@ -1,0 +1,5 @@
+module_name,module_step,param_1,param_2,param_3
+Open App,Launch App,,,
+Sign In,Enter Text,${username_field},${user},
+Sign In,Press Element,${login_button},,
+Sign In,Assert Presence,${home_title},10,

@@ -1,0 +1,36 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	objectVersion = 56;
+	objects = {
+		AA000000000000000000000C = {isa = PBXBuildFile; fileRef = AA000000000000000000000F; };
+		AA000000000000000000000D = {isa = PBXBuildFile; fileRef = AA0000000000000000000010; };
+		AA000000000000000000000E = {isa = PBXBuildFile; fileRef = AA0000000000000000000011; };
+		AA000000000000000000000F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		AA0000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Generated.swift; sourceTree = "<group>"; };
+		AA0000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Probe.swift; sourceTree = "<group>"; };
+		AA0000000000000000000008 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FixtureApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000009 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FixtureAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000019 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		AA000000000000000000001A = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		AA000000000000000000001B = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		AA0000000000000000000002 = {isa = PBXGroup; children = (AA0000000000000000000003, AA0000000000000000000004, AA0000000000000000000005, ); sourceTree = "<group>"; };
+		AA0000000000000000000003 = {isa = PBXGroup; children = (AA000000000000000000000F, ); path = App; sourceTree = "<group>"; };
+		AA0000000000000000000004 = {isa = PBXGroup; children = (AA0000000000000000000010, AA0000000000000000000011, ); path = UITests; sourceTree = "<group>"; };
+		AA0000000000000000000005 = {isa = PBXGroup; children = (AA0000000000000000000008, AA0000000000000000000009, ); name = Products; sourceTree = "<group>"; };
+		AA0000000000000000000006 = {isa = PBXNativeTarget; buildConfigurationList = AA0000000000000000000012; buildPhases = (AA000000000000000000000A, AA0000000000000000000019, AA000000000000000000001B, ); buildRules = (); dependencies = (); name = FixtureApp; productName = FixtureApp; productReference = AA0000000000000000000008; productType = "com.apple.product-type.application"; };
+		AA0000000000000000000007 = {isa = PBXNativeTarget; buildConfigurationList = AA0000000000000000000013; buildPhases = (AA000000000000000000000B, AA000000000000000000001A, ); buildRules = (); dependencies = (AA0000000000000000000017, ); name = FixtureAppUITests; productName = FixtureAppUITests; productReference = AA0000000000000000000009; productType = "com.apple.product-type.bundle.ui-testing"; };
+		AA0000000000000000000001 = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 1500; TargetAttributes = { AA0000000000000000000007 = {TestTargetID = AA0000000000000000000006; }; }; }; buildConfigurationList = AA0000000000000000000013X; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base, ); mainGroup = AA0000000000000000000002; productRefGroup = AA0000000000000000000005; projectDirPath = ""; projectRoot = ""; targets = (AA0000000000000000000006, AA0000000000000000000007, ); };
+		AA000000000000000000000A = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AA000000000000000000000C, ); runOnlyForDeploymentPostprocessing = 0; };
+		AA000000000000000000000B = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AA000000000000000000000D, AA000000000000000000000E, ); runOnlyForDeploymentPostprocessing = 0; };
+		AA0000000000000000000017 = {isa = PBXTargetDependency; target = AA0000000000000000000006; targetProxy = AA0000000000000000000018; };
+		AA0000000000000000000018 = {isa = PBXContainerItemProxy; containerPortal = AA0000000000000000000001; proxyType = 1; remoteGlobalIDString = AA0000000000000000000006; remoteInfo = FixtureApp; };
+		AA0000000000000000000016 = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_OBJC_ARC = YES; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; IPHONEOS_DEPLOYMENT_TARGET = 17.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; }; name = Debug; };
+		AA0000000000000000000014 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; PRODUCT_BUNDLE_IDENTIFIER = ai.mozark.FixtureApp; PRODUCT_NAME = FixtureApp; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		AA0000000000000000000015 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = ai.mozark.FixtureAppUITests; PRODUCT_NAME = FixtureAppUITests; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = FixtureApp; }; name = Debug; };
+		AA0000000000000000000012 = {isa = XCConfigurationList; buildConfigurations = (AA0000000000000000000014, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+		AA0000000000000000000013 = {isa = XCConfigurationList; buildConfigurations = (AA0000000000000000000015, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+		AA0000000000000000000013X = {isa = XCConfigurationList; buildConfigurations = (AA0000000000000000000016, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+	};
+	rootObject = AA0000000000000000000001;
+}

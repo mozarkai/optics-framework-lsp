@@ -7,18 +7,46 @@ import { Poller } from './poller';
 export const VIEW_ID = 'optics.deviceView';
 const LAST_DEVICE = 'optics.deviceView.last';
 
+/** The language server's answer for a device on a hub: only it can hold a session there. */
+export type Shot = { error?: string; png?: string };
+
 export class DeviceView implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private listing: device.Listing = { devices: [], notes: [] };
   private selected: string | undefined;
   private paused = false;
-  private readonly poller = new Poller(
-    () => this.frame(),
-    () => Math.max(250, this.setting<number>('refreshMs', 1000))
-  );
+  // A hub screenshot takes seconds to ten, so it waits twice as long as it last took.
+  private slowest = 0;
+  private readonly poller = new Poller(() => this.frame(), () => Math.max(250, this.setting<number>('refreshMs', 1000)));
+  private readonly pictures = new Poller(() => this.picture(), () => Math.max(10000, this.slowest * 2));
 
-  constructor(private readonly context: vscode.ExtensionContext) {
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly hubDevice: (uri: string) => Promise<device.Device | null>,
+    private readonly hubShot: (uri: string) => Promise<Shot>,
+    private readonly suite: () => string | undefined
+  ) {
     this.selected = context.workspaceState.get<string>(LAST_DEVICE);
+  }
+
+  /** The list has to be asked again: a hub device belongs to the suite that is open. */
+  suiteChanged(): void {
+    if (this.view?.visible) {
+      void this.relist();
+    }
+  }
+
+  private remote(): boolean {
+    return !!this.selected?.startsWith('remote:');
+  }
+
+  private start(): void {
+    (this.remote() ? this.pictures : this.poller).start();
+  }
+
+  private stop(): void {
+    this.poller.stop();
+    this.pictures.stop();
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -26,9 +54,9 @@ export class DeviceView implements vscode.WebviewViewProvider {
     view.webview.options = { enableScripts: true };
     view.webview.html = html(view.webview.cspSource);
     view.webview.onDidReceiveMessage((message) => this.onMessage(message));
-    view.onDidChangeVisibility(() => (view.visible ? this.resume() : this.poller.stop()));
+    view.onDidChangeVisibility(() => (view.visible ? this.resume() : this.stop()));
     view.onDidDispose(() => {
-      this.poller.stop();
+      this.stop();
       this.view = undefined;
     });
   }
@@ -40,7 +68,7 @@ export class DeviceView implements vscode.WebviewViewProvider {
   // The language server is another process, and picks its device from this when nothing else does.
   private async tell(): Promise<void> {
     const launch = await mcp.ensureLaunch();
-    if (launch && this.selected) {
+    if (launch && this.selected && !this.remote()) {
       await device.select(launch, this.selected).catch(() => undefined);
     }
   }
@@ -65,13 +93,14 @@ export class DeviceView implements vscode.WebviewViewProvider {
         this.selected = message.id;
         void this.context.workspaceState.update(LAST_DEVICE, message.id);
         void this.tell();
-        this.poller.stop();
-        this.poller.start();
+        this.stop();
+        this.post({ type: 'cleared' });
+        this.start();
         break;
       case 'pause':
         this.paused = !this.paused;
         this.post({ type: 'paused', paused: this.paused });
-        this.paused ? this.poller.stop() : this.poller.start();
+        this.paused ? this.stop() : this.start();
         break;
     }
   }
@@ -79,7 +108,7 @@ export class DeviceView implements vscode.WebviewViewProvider {
   private async resume(): Promise<void> {
     await this.relist();
     if (!this.paused) {
-      this.poller.start();
+      this.start();
     }
   }
 
@@ -92,14 +121,30 @@ export class DeviceView implements vscode.WebviewViewProvider {
     try {
       this.listing = await device.listDevices(launch, this.adb());
     } catch (error) {
-      this.post({ type: 'error', message: String(error instanceof Error ? error.message : error) });
-      return;
+      // A hub device needs none of the local tools, so it is still offered.
+      this.listing = { devices: [], notes: [String(error instanceof Error ? error.message : error)] };
+    }
+    const suite = this.suite();
+    const hub = suite ? await this.hubDevice(suite).catch(() => null) : null;
+    if (hub) {
+      this.listing.devices.push(hub);
     }
     if (!this.listing.devices.some((d) => d.id === this.selected)) {
       this.selected = this.listing.devices[0]?.id;
     }
     this.post({ type: 'devices', ...this.listing, selected: this.selected });
     void this.tell();
+  }
+
+  private async picture(): Promise<void> {
+    const suite = this.suite();
+    if (!this.remote() || !suite) {
+      return;
+    }
+    const began = Date.now();
+    const shot: Shot = await this.hubShot(suite).catch((error) => ({ error: String(error) }));
+    this.slowest = Date.now() - began;
+    this.post(shot.error ? { type: 'error', message: shot.error } : { type: 'frame', png: shot.png });
   }
 
   private async frame(): Promise<void> {
@@ -168,6 +213,8 @@ function html(csp: string): string {
       $('img').src = 'data:image/png;base64,' + data.png;
       $('img').hidden = false;
       $('note').textContent = '';
+    } else if (data.type === 'cleared') {
+      $('img').hidden = true;
     } else if (data.type === 'error') {
       $('note').textContent = data.message;
     } else if (data.type === 'paused') {

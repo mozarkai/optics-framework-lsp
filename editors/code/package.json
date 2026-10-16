@@ -60,6 +60,11 @@
         "category": "Optics"
       },
       {
+        "command": "optics.screen.read",
+        "title": "Read Screen Elements",
+        "category": "Optics"
+      },
+      {
         "command": "optics.mcp.configure",
         "title": "Configure LSP MCP Server for Claude Code",
         "category": "Optics"

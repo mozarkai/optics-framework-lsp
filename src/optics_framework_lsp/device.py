@@ -10,6 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from . import adb_setup
+
 TIMEOUT = 15
 
 
@@ -30,7 +32,7 @@ def _adb() -> str | None:
         candidate = Path(sdk).expanduser() / "platform-tools" / "adb" if sdk else None
         if candidate and candidate.is_file():
             return str(candidate)
-    return shutil.which("adb")
+    return shutil.which("adb") or adb_setup.ensure()
 
 
 def _run(command: list[str]) -> bytes:
@@ -75,7 +77,7 @@ def list_devices() -> dict:
         except (DeviceError, OSError) as error:
             notes.append(f"Android: {error}")
     else:
-        notes.append("Android: adb not found. Set optics.deviceView.adbPath or install the platform tools.")
+        notes.append(f"Android: {adb_setup.problem or 'adb not found'}. Set optics.deviceView.adbPath, or install the platform tools.")
     if sys.platform == "darwin" and shutil.which("xcrun"):
         try:
             devices += _ios()

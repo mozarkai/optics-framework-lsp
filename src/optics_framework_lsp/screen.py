@@ -17,6 +17,7 @@ from pathlib import Path
 import yaml
 
 from .xpaths import Xpaths
+from . import adb_setup
 from .device import DeviceError, Missing, _adb, _android, _ios, _run, selected
 
 # Longer text is a paragraph, which nobody locates an element by.
@@ -145,7 +146,7 @@ class Busy(DeviceError):
 def _need_adb() -> str:
     adb = _adb()
     if not adb:
-        raise Missing("adb not found. Set OPTICS_ADB, or the adb path in the editor's settings.")
+        raise Missing(f"{adb_setup.problem or 'adb not found'}. Set the adb path in the editor's settings, or OPTICS_ADB.")
     return adb
 
 

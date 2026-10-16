@@ -21,6 +21,13 @@ extension.
 The server attaches to every `*.csv`, `*.yaml` and `*.yml` file in the workspace. Files that are not optics suites
 produce no diagnostics, because the parser classifies each file by its header row.
 
+## Device view
+
+The **Optics** icon in the activity bar opens a **Device** view that shows the screen of a running
+Android emulator or device, or a booted iOS simulator, beside the suite. Pick a device, and pause or
+refresh as needed. It is view-only, and needs `adb` for Android (and Xcode's `simctl` for iOS). A
+capture takes about a second on an Android emulator, so the view updates about once a second.
+
 ## AI agents
 
 The extension also offers the server over MCP, so an agent can ask it about the whole project
@@ -39,6 +46,9 @@ documentation is, for whichever of Claude Code, Cursor and the Gemini CLI you ha
 | `optics.trace.server` | `"off"` | log LSP traffic to the "Optics" output channel |
 | `optics.mcp.enabled` | `true` | offer the server to AI agents over MCP |
 | `optics.mcp.binaryPath` | unset | use this `agent-lsp` binary rather than downloading one |
+
+Device view: `optics.deviceView.refreshMs` sets the refresh interval, and
+`optics.deviceView.adbPath` points at `adb` when the editor was started without it on its PATH.
 
 ## Commands
 

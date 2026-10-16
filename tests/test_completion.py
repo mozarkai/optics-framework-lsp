@@ -470,3 +470,21 @@ def test_an_element_on_screen_ranks_first_in_a_param_slot():
 
     assert ranked["submit"] == "0submit"
     assert ranked.get("btn") is None
+
+
+def test_a_remote_device_that_has_not_been_read_offers_an_item_that_reads_it():
+    items = _with_screen(ELEMENTS, "name,", screen=())
+    assert not [i for i in items if i.command]
+
+    text = ELEMENTS + "name,"
+    ast = parse_csv_sources([("file:///w/0.csv", text)])
+    items = complete(
+        text, Position(line=ELEMENTS.count("\n"), character=5), ast, CATALOG,
+        uri="file:///w/0.csv", screen_hint="Read this device's screen",
+    )
+    (item,) = [i for i in items if i.command]
+
+    assert item.command.command == "optics.readScreen"
+    assert item.command.arguments == ["file:///w/0.csv"]
+    assert item.sort_text == "~"
+    assert item.text_edit.new_text == ""

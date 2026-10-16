@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 from pathlib import Path
@@ -22,7 +23,8 @@ def test_a_real_screen_gives_locators_in_the_form_suites_already_write():
     locators = {s.locator for s in found}
 
     assert '//android.widget.TextView[@text="Optics Super App"]' in locators
-    assert '//android.view.ViewGroup[@resource-id="home-card-9"]' in locators
+    assert '//android.widget.LinearLayout[@resource-id="com.teststudio:id/action_bar_root"]' in locators
+    assert not any('@resource-id="home-card-9"' in locator for locator in locators), "content-desc comes first, as in optics"
 
 
 def test_a_repeated_locator_is_numbered_so_each_matches_one_node():
@@ -39,8 +41,10 @@ def test_resource_id_beats_text_and_a_bare_container_is_left_out():
     assert not any("FrameLayout" in locator for locator in found)
 
 
-def test_a_value_holding_both_quotes_cannot_be_an_xpath_and_is_left_out():
-    assert not any("EditText" in s.locator for s in screen.parse(DUPES))
+def test_a_value_holding_both_kinds_of_quote_is_written_with_concat_as_optics_writes_it():
+    locator = next(s.locator for s in screen.parse(DUPES) if "EditText" in s.locator)
+
+    assert locator == """//android.widget.EditText[@text=concat("It's ", '"', "x", '"', "")]"""
 
 
 def test_the_cache_answers_at_once_and_refreshes_behind_the_caller():
@@ -265,35 +269,39 @@ def test_a_problem_is_shown_once_however_often_completion_asks(monkeypatch):
 
 
 
-def test_an_ios_screen_offers_the_names_and_the_path_from_the_application_down():
+def test_an_ios_screen_offers_the_name_and_the_xpath_optics_would_write():
     found = {s.locator: s for s in screen.parse_ios_source(WDA)}
-    paths = [locator for locator in found if locator.startswith("//")]
 
-    assert "home-card-1" in found
     assert found["home-card-1"].detail == "on screen: Other, name home-card-1"
-    assert all(p.startswith('//XCUIElementTypeApplication[@name="QuickTest"]/XCUIElementTypeWindow/') for p in paths)
-    assert max(p.count("/") for p in paths) > 15
+    assert '//XCUIElementTypeOther[@name="home-card-1"]' in found
     assert "QuickTest" not in found
 
 
-def test_a_path_numbers_only_the_steps_that_share_a_type_with_a_sibling():
+def test_an_unnamed_element_is_written_as_the_path_from_the_nearest_unique_parent():
     xml = (
-        '<AppiumAUT><XCUIElementTypeApplication name="App"><XCUIElementTypeWindow>'
-        '<XCUIElementTypeOther name="a"/><XCUIElementTypeOther name="b"/><XCUIElementTypeButton name="c"/>'
-        "</XCUIElementTypeWindow></XCUIElementTypeApplication></AppiumAUT>"
+        '<AppiumAUT><XCUIElementTypeApplication name="App"><XCUIElementTypeWindow><XCUIElementTypeTable name="list">'
+        "<XCUIElementTypeCell/><XCUIElementTypeCell/></XCUIElementTypeTable></XCUIElementTypeWindow>"
+        "<XCUIElementTypeWindow/></XCUIElementTypeApplication></AppiumAUT>"
     )
-    paths = {s.detail.rsplit(" ", 1)[-1]: s.locator for s in screen.parse_ios_source(xml) if s.locator.startswith("//")}
+    found = [s.locator for s in screen.parse_ios_source(xml)]
 
-    assert paths["a"] == '//XCUIElementTypeApplication[@name="App"]/XCUIElementTypeWindow/XCUIElementTypeOther[1]'
-    assert paths["c"] == '//XCUIElementTypeApplication[@name="App"]/XCUIElementTypeWindow/XCUIElementTypeButton'
+    assert found == [
+        '//XCUIElementTypeTable[@name="list"]/XCUIElementTypeCell[1]',
+        '//XCUIElementTypeTable[@name="list"]/XCUIElementTypeCell[2]',
+    ] or '//XCUIElementTypeTable[@name="list"]/XCUIElementTypeCell[2]' in found
 
 
-def test_what_is_off_screen_or_has_no_name_is_left_out():
+def test_what_is_off_screen_or_is_a_bare_container_is_left_out_but_an_unnamed_control_stays():
     xml = (
         '<AppiumAUT><XCUIElementTypeApplication name="App"><XCUIElementTypeOther name="seen" visible="true"/>'
-        '<XCUIElementTypeOther name="hidden" visible="false"/><XCUIElementTypeOther/></XCUIElementTypeApplication></AppiumAUT>'
+        '<XCUIElementTypeOther name="hidden" visible="false"/><XCUIElementTypeOther/><XCUIElementTypeCell/>'
+        "</XCUIElementTypeApplication></AppiumAUT>"
     )
-    assert [s.locator for s in screen.parse_ios_source(xml) if not s.locator.startswith("//")] == ["seen"]
+    details = [s.detail for s in screen.parse_ios_source(xml)]
+
+    assert not any("hidden" in d for d in details)
+    assert any("Cell, no name" in d for d in details)
+    assert not any("Other, no name" in d for d in details)
 
 
 def test_a_webdriveragent_that_is_already_running_is_read_without_opening_a_session(monkeypatch):
@@ -353,13 +361,6 @@ def test_an_appium_that_is_not_running_says_so(monkeypatch):
         screen._ios_source("U", None)
 
 
-def test_a_remote_appium_hub_is_not_opened_for_suggestions(monkeypatch):
-    monkeypatch.setattr(screen, "_wda_source", lambda port: 1 / 0)
-    monkeypatch.setattr(screen, "_http", lambda *a, **k: 1 / 0)
-
-    with pytest.raises(screen.Missing, match="remote"):
-        screen._ios_source("U", {"url": "https://appium-hub.example.com/wd/hub"})
-
 
 def test_the_config_keeps_the_appium_settings_for_the_device_it_names(tmp_path):
     (tmp_path / "config.yaml").write_text(
@@ -375,3 +376,139 @@ def test_an_ios_snapshot_reads_the_screen_through_appium(monkeypatch):
     monkeypatch.setattr(screen, "_ios_source", lambda udid, block: WDA)
 
     assert "home-card-1" in [s.locator for s in screen.snapshot("ios:SIM")]
+
+
+APPIUM_ANDROID = (Path(__file__).parent / "fixtures" / "appium_android_source.xml").read_text()
+
+
+def test_an_android_screen_read_through_appium_needs_no_conversion():
+    found = screen.parse(APPIUM_ANDROID)
+
+    assert found
+    assert all(s.locator.startswith(("//", "/", "(")) for s in found)
+    assert not any("//node" in s.locator for s in found)
+
+
+def test_the_xpaths_are_the_ones_optics_itself_writes():
+    etree = pytest.importorskip("lxml.etree")
+    helper_module = pytest.importorskip("optics_framework.engines.drivers.appium_UI_helper")
+    helper = object.__new__(helper_module.UIHelper)
+    body = APPIUM_ANDROID.split("?>", 1)[-1].strip()
+    lroot = etree.fromstring(body.encode())
+    index = helper_module.XPathUniquenessIndex(lroot)
+    root = screen.ET.fromstring(body)
+    ours = screen.Xpaths(root)
+
+    assert [helper.get_xpath(n, index) for n in lroot.iter()] == [ours.of(n) for n in root.iter()]
+
+
+HUB = {
+    "url": "https://hub.example.com/wd/hub",
+    "capabilities": {"platformName": "Android", "udid": "R5", "mozark:options": {"parentSessionId": "P", "secret": "x"}},
+}
+
+
+def _jwt(expiry):
+    import base64
+
+    part = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")  # noqa: E731
+    return f"{part({'alg': 'none'})}.{part({'exp': expiry})}.sig"
+
+
+def test_a_device_is_remote_when_its_suites_appium_is_not_on_this_machine(monkeypatch):
+    monkeypatch.setitem(screen._appium, "android:R5", HUB)
+    monkeypatch.setitem(screen._appium, "android:LOCAL", {"url": "http://localhost:4723/wd/hub"})
+
+    assert screen.is_remote("android:R5")
+    assert not screen.is_remote("android:LOCAL")
+    assert not screen.is_remote("android:unknown")
+
+
+def test_an_expired_hub_token_says_when_it_expired(monkeypatch):
+    block = {"capabilities": {"mozark:options": {"secret": _jwt(time.time() - 3600)}}}
+
+    with pytest.raises(screen.Missing, match="expired on"):
+        screen._check_token(block)
+    screen._check_token({"capabilities": {"mozark:options": {"secret": _jwt(time.time() + 3600)}}})
+    screen._check_token({"capabilities": {"mozark:options": {"secret": "not-a-jwt"}}})
+    screen._check_token({})
+
+
+def test_a_remote_device_is_read_through_a_session_opened_with_the_suites_capabilities(monkeypatch):
+    calls = []
+
+    def http(method, url, body=None, timeout=15):
+        calls.append((method, url, body))
+        return {"value": {"sessionId": "S"} if method == "POST" else APPIUM_ANDROID if url.endswith("/source") else None}
+
+    monkeypatch.setitem(screen._appium, "android:R5", HUB)
+    monkeypatch.setattr(screen, "_http", http)
+    monkeypatch.setattr(screen, "_busy", lambda serial: 1 / 0)
+
+    found = screen.snapshot("android:R5")
+
+    assert found and all(s.locator.startswith(("//", "/", "(")) for s in found)
+    assert calls[0][1] == "https://hub.example.com/wd/hub/session"
+    assert calls[0][2]["capabilities"]["alwaysMatch"]["mozark:options"] == HUB["capabilities"]["mozark:options"]
+    assert [c[0] for c in calls[:2]] == ["POST", "GET"]
+
+
+def _cache(**kwargs):
+    return screen.Cache(fetch=lambda p: [screen.OnScreen("//a", "on screen: A")], remote=lambda p: p == "android:R5", **kwargs)
+
+
+def test_a_remote_device_is_never_read_until_asked_and_the_list_says_how():
+    cache = _cache()
+
+    assert cache.get("android:R5") == []
+    assert "Read Screen Elements" in cache.hint("android:R5")
+    assert cache.hint("android:local") is None
+
+
+def test_a_remote_read_is_offered_with_its_age_and_for_a_short_while_only():
+    cache = _cache(remote_ttl=0.2)
+    cache.read_now("android:R5")
+
+    (found,) = cache.get("android:R5")
+    assert found.detail == "on screen: A, read 0 s ago"
+    assert cache.hint("android:R5") is None
+
+    time.sleep(0.3)
+    assert cache.get("android:R5") == []
+    assert "Screen read 0 s ago" in cache.hint("android:R5")
+
+
+def test_a_local_device_read_on_request_is_offered_for_a_while_even_with_background_reads_off():
+    cache = screen.Cache(fetch=lambda p: [screen.OnScreen("//a", "on screen: A")], enabled=False, remote_ttl=60)
+
+    assert cache.get("android:E") == []
+    cache.read_now("android:E")
+
+    assert [s.detail for s in cache.get("android:E")] == ["on screen: A, read 0 s ago"]
+
+
+def test_the_read_command_takes_the_suites_uri_as_its_first_argument(tmp_path, monkeypatch):
+    import asyncio
+
+    from optics_framework_lsp import server
+
+    _config(tmp_path, udid="emulator-5554")
+    (tmp_path / "elements").mkdir()
+    uri = (tmp_path / "elements" / "elements.csv").as_uri()
+    sent = []
+
+    class Client:
+        def folder_of(self, uri):
+            return tmp_path.as_uri()
+
+        def window_show_message(self, params):
+            sent.append(params.message)
+
+    read = []
+    monkeypatch.delenv("OPTICS_DEVICE", raising=False)
+    monkeypatch.setattr(server.SCREEN, "read_now", lambda device: read.append(device) or [screen.OnScreen("//a", "d")])
+
+    asyncio.run(server.read_screen(Client(), uri))
+
+    assert read == ["android:emulator-5554"]
+    assert sent[-1] == "Optics: read 1 elements from android:emulator-5554."

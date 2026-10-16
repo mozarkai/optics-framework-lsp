@@ -5,27 +5,41 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 /**
- * A capture takes about a second, so the next one starts [delayMs] after the last ends: queued ones
- * show a stale screen, and a fixed rate would burst to catch up after a stall.
+ * A capture takes a while, so the next one starts [delayMs] after the last ends, asked for each time:
+ * queued ones show a stale screen, and a slow device should be asked less often.
  */
-class FramePoller(private val delayMs: Long, private val tick: () -> Unit) {
+class FramePoller(private val delayMs: () -> Long, private val tick: () -> Unit) {
 
     private val executor = Executors.newSingleThreadScheduledExecutor {
         Thread(it, "optics-device-view").apply { isDaemon = true }
     }
-    private var running: ScheduledFuture<*>? = null
+    private var next: ScheduledFuture<*>? = null
+    private var wanted = false
+    private var running = false
 
     @Synchronized
     fun start() {
-        // The tick reports its own failures, and an exception would end the schedule.
-        running = running ?: executor.scheduleWithFixedDelay(
-            { try { tick() } catch (_: Exception) {} }, 0, delayMs, TimeUnit.MILLISECONDS,
-        )
+        if (wanted) return
+        wanted = true
+        if (!running) next = executor.schedule(::run, 0, TimeUnit.MILLISECONDS)
     }
 
     @Synchronized
     fun stop() {
-        running?.cancel(false)
-        running = null
+        wanted = false
+        next?.cancel(false)
+    }
+
+    private fun run() {
+        synchronized(this) { running = true }
+        try {
+            tick()
+        } catch (_: Exception) {
+            // The tick reports its own failures, and the loop must outlive them.
+        }
+        synchronized(this) {
+            running = false
+            if (wanted) next = executor.schedule(::run, delayMs(), TimeUnit.MILLISECONDS)
+        }
     }
 }

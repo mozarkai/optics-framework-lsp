@@ -16,6 +16,11 @@
             text="Restart Optics Language Server">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>
+    <action id="optics.screen.read" class="ai.mozark.optics.lsp.ReadScreenAction"
+            text="Read Optics Screen Elements"
+            description="Read the elements on the device the suite's config.yaml names, for completion">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+    </action>
     <action id="optics.mcp.configure" class="ai.mozark.optics.lsp.ConfigureMcpAction"
             text="Configure Optics LSP MCP Server"
             description="Fetch the agent-lsp bridge, register it with the AI agents on this machine, and copy an MCP client entry to the clipboard">

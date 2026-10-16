@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
 import sys
 from pathlib import Path
 
@@ -63,6 +65,11 @@ def _batch(command: str, path: str | None, as_json: bool) -> int:
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["_device"]:
+        from .device import main as device
+
+        raise SystemExit(device(sys.argv[2:]))
+
     parser = argparse.ArgumentParser(prog="optics-lsp", description=__doc__)
     parser.add_argument(
         "command",
@@ -83,6 +90,16 @@ def main() -> None:
 
     from .server import server
 
+    from .remote import HELD
+
+    # An IDE stops the server with a signal, and the stdin reader thread blocks atexit, so close and exit here.
+    def stop(number: int, _frame: object) -> None:
+        HELD.close_all()
+        os._exit(128 + number)
+
+    for name in ("SIGTERM", "SIGHUP"):
+        if sig := getattr(signal, name, None):
+            signal.signal(sig, stop)
     server.start_io()
 
 

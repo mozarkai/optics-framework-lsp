@@ -35,10 +35,33 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "optics",
+          "title": "Optics",
+          "icon": "media/device.svg"
+        }
+      ]
+    },
+    "views": {
+      "optics": [
+        {
+          "type": "webview",
+          "id": "optics.deviceView",
+          "name": "Device"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "optics.server.restart",
         "title": "Restart Language Server",
+        "category": "Optics"
+      },
+      {
+        "command": "optics.screen.read",
+        "title": "Read Screen Elements",
         "category": "Optics"
       },
       {
@@ -69,6 +92,34 @@
           ],
           "default": "off",
           "description": "Log LSP messages sent to/from the server"
+        },
+        "optics.autoInstall": {
+          "scope": "machine",
+          "type": "boolean",
+          "default": true,
+          "description": "Download a helper tool that is missing: today Android's platform-tools (adb) from Google, checked against a pinned checksum. Turn off to use only your own, and set optics.deviceView.adbPath."
+        },
+        "optics.screenElements.enabled": {
+          "scope": "machine",
+          "type": "boolean",
+          "default": false,
+          "description": "Suggest the elements on the connected Android emulator's screen as locators and element names in a suite. Off by default because it reads the device in the background (about every 10 seconds, and not while a test is running)."
+        },
+        "optics.deviceView.refreshMs": {
+          "scope": "window",
+          "type": "number",
+          "default": 1000,
+          "minimum": 250,
+          "description": "How often the Device view asks for a new screenshot. A capture takes about a second on an Android emulator, so going lower mostly shows the same frame."
+        },
+        "optics.deviceView.adbPath": {
+          "scope": "machine",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "The adb binary the Device view uses. Set this when the editor was started without the Android platform tools on its PATH."
         },
         "optics.mcp.enabled": {
           "scope": "window",

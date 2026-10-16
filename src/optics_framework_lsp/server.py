@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from importlib.metadata import PackageNotFoundError, version
@@ -12,8 +14,9 @@ from lsprotocol import types
 from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path
 
-from . import completion
+from . import completion, remote, screen
 from .parser.ast import AST
+from .device import DeviceError
 from .keyword_catalog import CATALOG
 from .parser import SUITE, is_yaml, parse_sources
 from .positions import to_utf16
@@ -229,6 +232,12 @@ def _revalidate(ls: OpticsLanguageServer, uri: str) -> None:
 
 @server.feature(types.TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls: OpticsLanguageServer, params: types.DidOpenTextDocumentParams) -> None:
+    # Warm the cache, so the first completion already has a screen to offer. A yaml or csv that
+    # is not an optics suite is somebody else's file.
+    uri = params.text_document.uri
+    if parse_sources([(uri, params.text_document.text)]).kinds.get(uri):
+        SCREEN.get(_device_hint(uri, ls.folder_of(uri)))
+        _report_screen_problem(ls)
     _revalidate(ls, params.text_document.uri)
 
 
@@ -256,6 +265,34 @@ def did_close(ls: OpticsLanguageServer, params: types.DidCloseTextDocumentParams
     _revalidate(ls, params.text_document.uri)
 
 
+def _device_hint(uri: str, folder: str | None) -> str | None:
+    """The environment beats the suite's config.yaml, and both beat whatever the device view picked."""
+    if device := os.environ.get("OPTICS_DEVICE"):
+        return device
+    path, root = to_fs_path(uri), to_fs_path(folder) if folder else None
+    return screen.config_device(Path(path).parent, Path(root)) if path and root else None
+
+
+_reported: set[str] = set()
+
+
+def _report_screen_problem(ls: LanguageServer) -> None:
+    """Said once per problem: the cache retries every minute and would repeat it."""
+    problem = SCREEN.problem
+    if problem and problem not in _reported:
+        _reported.add(problem)
+        ls.window_show_message(
+            types.ShowMessageParams(type=types.MessageType.Warning, message=f"Optics screen suggestions: {problem}")
+        )
+
+
+SCREEN = screen.Cache(
+    enabled=os.environ.get("OPTICS_SCREEN_ELEMENTS", "").lower() in ("1", "true", "yes"),
+    remote=screen.is_remote,
+    remote_ttl=float(os.environ.get("OPTICS_REMOTE_TTL", "120")),
+)
+
+
 @server.feature(
     types.TEXT_DOCUMENT_COMPLETION,
     types.CompletionOptions(trigger_characters=[",", "{"]),
@@ -271,6 +308,9 @@ def completions(
     files = ls.files(folder)
     sources = ls.sources(files)
     ast = parse_sources(sources)
+    device = _device_hint(uri, folder)
+    screen_found = SCREEN.get(device) if ast.kinds.get(uri) else ()
+    _report_screen_problem(ls)
     return completion.complete(
         ls.workspace.get_text_document(uri).source,
         params.position,
@@ -281,6 +321,8 @@ def completions(
         data_files=data_files(to_fs_path(folder), files, ast),
         apis=apis(sources),
         snippets=_snippets(ls),
+        screen=screen_found,
+        screen_hint=SCREEN.hint(device) if ast.kinds.get(uri) else None,
     )
 
 
@@ -471,3 +513,57 @@ def signature_help(
         CATALOG,
         uri=params.text_document.uri,
     )
+
+
+@server.command("optics.readScreen")
+async def read_screen(ls: OpticsLanguageServer, *arguments: str) -> None:
+    """The one way a remote device is read: it takes about 15 s and holds the device for that long."""
+    uri = str(arguments[0]) if arguments else ""
+    device = _device_hint(uri, ls.folder_of(uri))
+    note = lambda kind, text: ls.window_show_message(types.ShowMessageParams(type=kind, message=f"Optics: {text}"))  # noqa: E731
+    if not device:
+        return note(types.MessageType.Warning, "no device to read. Name one in config.yaml, or set OPTICS_DEVICE.")
+    note(types.MessageType.Info, f"reading the screen of {device}. This can take about 15 seconds.")
+    try:
+        found = await asyncio.get_running_loop().run_in_executor(None, SCREEN.read_now, device)
+    except Exception as error:
+        return note(types.MessageType.Warning, f"could not read the screen: {error}")
+    note(types.MessageType.Info, f"read {len(found)} elements from {device}.")
+
+
+def _remote(ls: OpticsLanguageServer, uri: str) -> tuple[str, dict] | None:
+    device = _device_hint(uri, ls.folder_of(uri))
+    return (device, screen._appium[device]) if device and screen.is_remote(device) and device in screen._appium else None
+
+
+@server.command("optics.remoteDevice")
+def remote_device(ls: OpticsLanguageServer, uri: str = "") -> dict | None:
+    found = _remote(ls, uri)
+    if not found:
+        return None
+    device, block = found
+    caps = block.get("capabilities") or {}
+    platform, _, udid = device.partition(":")
+    return {"id": f"remote:{device}", "name": f"{caps.get('deviceName') or udid} (hub)", "platform": platform}
+
+
+@server.command("optics.suiteDevice")
+def suite_device(ls: OpticsLanguageServer, uri: str = "") -> str | None:
+    """The panel lists a hub device under a `remote:` id."""
+    device = _device_hint(uri, ls.folder_of(uri))
+    return f"remote:{device}" if device and screen.is_remote(device) else device
+
+
+@server.command("optics.remoteScreen")
+async def remote_screen(ls: OpticsLanguageServer, uri: str = "") -> dict:
+    """What the Device view shows of a hub device. It is slow, so the editor asks for it as often as it can bear."""
+    found = _remote(ls, uri)
+    if not found:
+        return {"error": "This suite's device is not on a remote hub."}
+    device, block = found
+    _, _, udid = device.partition(":")
+    try:
+        png = await asyncio.get_running_loop().run_in_executor(None, remote.HELD.screenshot, device, block, udid)
+    except DeviceError as error:
+        return {"error": str(error)}
+    return {"png": png}

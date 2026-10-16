@@ -48,6 +48,12 @@ class OpticsLspDescriptor(project: Project, private val python: Path) :
             .withEnvironment("PYTHONPATH", pythonPath())
             // Otherwise the server writes __pycache__ into the payload we packaged.
             .withEnvironment("PYTHONDONTWRITEBYTECODE", "1")
+            .apply {
+                val settings = OpticsSettings.getInstance()
+                if (settings.screenElements) withEnvironment("OPTICS_SCREEN_ELEMENTS", "1")
+                if (!settings.autoInstall) withEnvironment("OPTICS_AUTO_INSTALL", "0")
+                if (settings.adbPath.isNotBlank()) withEnvironment("OPTICS_ADB", settings.adbPath)
+            }
 
     /** The platform compares descriptors to decide whether to restart; without these every CSV looks new. */
     override fun equals(other: Any?): Boolean =
@@ -82,7 +88,7 @@ class OpticsLspDescriptor(project: Project, private val python: Path) :
     }
 }
 
-private fun pythonPath(): String = listOfNotNull(
+internal fun pythonPath(): String = listOfNotNull(
     OpticsLspIntegrationProvider.bundledLibs.toString(),
     EnvironmentUtil.getValue("PYTHONPATH")?.ifEmpty { null },
 ).joinToString(File.pathSeparator)

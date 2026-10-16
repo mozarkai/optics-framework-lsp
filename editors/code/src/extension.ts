@@ -8,6 +8,7 @@ import {
   TextDocumentFilter,
 } from 'vscode-languageclient/node';
 import * as clients from './clients';
+import { DeviceView, Shot, VIEW_ID } from './deviceView';
 import * as mcp from './mcp';
 
 const MIN_PYTHON: [number, number] = [3, 12];
@@ -20,6 +21,19 @@ const SELECTOR: TextDocumentFilter[] = [
 const LAUNCH_ARGS = ['-S', '-m', 'optics_framework_lsp'];
 
 let client: LanguageClient | undefined;
+// The suite last looked at: the Device view has focus when it asks, and has no editor of its own.
+let suite: string | undefined = vscode.window.activeTextEditor?.document.uri.toString();
+
+const hubDevice = async (uri: string) => ((await ask('optics.remoteDevice', [uri])) as never) ?? null;
+const suiteDevice = async (uri: string) => ((await ask('optics.suiteDevice', [uri])) as string | null) ?? null;
+const hubShot = (uri: string) => ask('optics.remoteScreen', [uri]) as Promise<Shot>;
+
+function ask(command: string, args: string[]): Promise<unknown> {
+  if (!client) {
+    return Promise.reject(new Error('The Optics language server is not running.'));
+  }
+  return client.sendRequest('workspace/executeCommand', { command, arguments: args });
+}
 let python: PythonExtension | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -29,12 +43,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     python = undefined;
   }
 
+  const deviceView = new DeviceView(context, hubDevice, suiteDevice, hubShot, () => suite);
+  const configs = vscode.workspace.createFileSystemWatcher('**/config.yaml');
   context.subscriptions.push(
     mcp.register(context, () => resolveServerOptions(context)),
+    vscode.window.registerWebviewViewProvider(VIEW_ID, deviceView),
+    configs,
+    configs.onDidChange(() => deviceView.suiteChanged()),
+    configs.onDidCreate(() => deviceView.suiteChanged()),
+    configs.onDidDelete(() => deviceView.suiteChanged()),
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor && /\.(csv|ya?ml)$/i.test(editor.document.fileName) && suite !== editor.document.uri.toString()) {
+        suite = editor.document.uri.toString();
+        deviceView.suiteChanged();
+      }
+    }),
     vscode.commands.registerCommand('optics.server.restart', () => restart(context)),
     vscode.commands.registerCommand('optics.mcp.configure', () => configureMcp(context)),
+    vscode.commands.registerCommand('optics.screen.read', readScreen),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('optics.server')) {
+      if (event.affectsConfiguration('optics.server') || event.affectsConfiguration('optics.screenElements') || event.affectsConfiguration('optics.autoInstall') || event.affectsConfiguration('optics.deviceView.adbPath')) {
         restart(context);
       }
     }),
@@ -78,6 +106,19 @@ async function offerAgentSetup(context: vscode.ExtensionContext): Promise<void> 
   if (choice === configure) {
     await configureMcp(context);
   }
+}
+
+/** A remote device is only read when asked, and takes about 15 seconds. */
+async function readScreen(): Promise<void> {
+  const uri = vscode.window.activeTextEditor?.document.uri.toString();
+  if (!client || !uri) {
+    void vscode.window.showWarningMessage('Optics: open a suite file first.');
+    return;
+  }
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'Optics: reading the device screen' },
+    () => client!.sendRequest('workspace/executeCommand', { command: 'optics.readScreen', arguments: [uri] })
+  );
 }
 
 export function deactivate(): Thenable<void> | undefined {
@@ -228,5 +269,11 @@ function bundledEnv(context: vscode.ExtensionContext): NodeJS.ProcessEnv {
   const sep = process.platform === 'win32' ? ';' : ':';
   const libs = join(context.extensionPath, 'bundled', 'libs');
   const existing = process.env.PYTHONPATH;
-  return { ...process.env, PYTHONPATH: existing ? `${libs}${sep}${existing}` : libs };
+  const config = vscode.workspace.getConfiguration('optics');
+  const tools = {
+    ...(config.get<boolean>('screenElements.enabled') ? { OPTICS_SCREEN_ELEMENTS: '1' } : {}),
+    ...(config.get<boolean>('autoInstall') === false ? { OPTICS_AUTO_INSTALL: '0' } : {}),
+    ...(config.get<string>('deviceView.adbPath') ? { OPTICS_ADB: config.get<string>('deviceView.adbPath') } : {}),
+  };
+  return { ...process.env, ...tools, PYTHONPATH: existing ? `${libs}${sep}${existing}` : libs };
 }

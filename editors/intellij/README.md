@@ -38,6 +38,14 @@ against the deprecated `Lsp*Server*` names for no feature gain.
 
 Note the build numbers rather than a bare `261`: 2026.1 itself is 261.22158.277 and has neither.
 
+## Device view
+
+The **Optics Device** tool window, on the right, shows the screen of a running Android emulator or
+device, or a booted iOS simulator, beside the suite. Pick a device, and pause or refresh as needed.
+It is view-only, and needs `adb` for Android (and Xcode's `simctl` for iOS); set the `adb` binary
+under **Settings | Tools | Optics Framework** if the IDE was started without it on its PATH. It
+updates about once a second.
+
 ## AI agents
 
 **Tools | Configure Optics LSP MCP Server** offers the server to an AI agent over MCP, so it can ask

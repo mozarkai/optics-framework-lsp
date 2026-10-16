@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AppiumAUT>
+  <XCUIElementTypeApplication type="XCUIElementTypeApplication" name="QuickTest" label="QuickTest" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="" processId="49795" bundleId="org.reactjs.native.example.testStudio">
+    <XCUIElementTypeWindow type="XCUIElementTypeWindow" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+      <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+        <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+          <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+            <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+              <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+                <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+                  <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="101" index="0" traits=""/>
+                  <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="1" traits="">
+                    <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+                      <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+                        <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+                          <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+                            <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+                              <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+                                <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="0" width="402" height="874" index="0" traits="">
+                                  <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Optics Super App" name="Optics Super App" label="Optics Super App" enabled="true" visible="true" accessible="false" x="20" y="78" width="362" height="39" index="0" traits="StaticText">
+                                    <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Optics Super App" name="Optics Super App" label="Optics Super App" enabled="true" visible="true" accessible="true" x="20" y="78" width="362" height="39" index="0" traits="StaticText"/>
+                                  </XCUIElementTypeStaticText>
+                                  <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="23 automation testing scenarios" name="23 automation testing scenarios" label="23 automation testing scenarios" enabled="true" visible="true" accessible="false" x="20" y="120" width="362" height="18" index="1" traits="StaticText">
+                                    <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="23 automation testing scenarios" name="23 automation testing scenarios" label="23 automation testing scenarios" enabled="true" visible="true" accessible="true" x="20" y="120" width="362" height="18" index="0" traits="StaticText"/>
+                                  </XCUIElementTypeStaticText>
+                                  <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="149" width="402" height="692" index="2" traits="">
+                                    <XCUIElementTypeScrollView type="XCUIElementTypeScrollView" enabled="true" visible="true" accessible="false" x="0" y="149" width="402" height="691" index="0" traits="">
+                                      <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="149" width="402" height="2065" index="0" traits="">
+                                        <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="0" y="149" width="402" height="2065" index="0" traits="">
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-1" label="1, OCR / Text Chaos, Rotated, overlapping, duplicate text, ›" enabled="true" visible="true" accessible="true" x="20" y="149" width="362" height="77" index="0" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-2" label="2, Image vs OCR, Text / image / blurred detection, ›" enabled="true" visible="true" accessible="true" x="20" y="237" width="362" height="77" index="1" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-3" label="3, Partial Scroll, Bounded scroll inside static layout, ›" enabled="true" visible="true" accessible="true" x="20" y="325" width="362" height="77" index="2" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-4" label="4, Infinite Scroll, Lazy load + target detection, ›" enabled="true" visible="true" accessible="true" x="20" y="413" width="362" height="77" index="3" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-5" label="5, Animation Interference, Moving target among animated decoys, ›" enabled="true" visible="true" accessible="true" x="20" y="501" width="362" height="77" index="4" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-6" label="6, Hidden / Delayed, Delay, scroll, tap-triggered reveals, ›" enabled="true" visible="true" accessible="true" x="20" y="589" width="362" height="77" index="5" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-7" label="7, Multi-Element Validation, ANY / ALL logic with missing elements, ›" enabled="true" visible="true" accessible="true" x="20" y="677" width="362" height="77" index="6" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-8" label="8, Resizable Box, Drag handle to resize, content scales, ›" enabled="true" visible="true" accessible="true" x="20" y="765" width="362" height="77" index="7" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-9" label="9, Nested Gesture Conflict, Horizontal inside vertical scroll, ›" enabled="true" visible="false" accessible="true" x="20" y="853" width="362" height="77" index="8" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-10" label="10, Randomized Layout, Elements reorder on every render, ›" enabled="true" visible="false" accessible="true" x="20" y="941" width="362" height="77" index="9" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-11" label="11, Flicker / Unstable UI, Rapid appear/disappear cycles, ›" enabled="true" visible="false" accessible="true" x="20" y="1029" width="362" height="77" index="10" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-12" label="12, Multi-Language OCR, English, Hindi, symbols, mixed scripts, ›" enabled="true" visible="false" accessible="true" x="20" y="1117" width="362" height="77" index="11" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-13" label="13, Resolution / Scaling, Different sizes, pixel density issues, ›" enabled="true" visible="false" accessible="true" x="20" y="1205" width="362" height="77" index="12" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-14" label="14, Misleading UI, Fake buttons — find the real one, ›" enabled="true" visible="false" accessible="true" x="20" y="1293" width="362" height="77" index="13" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-15" label="15, Lag / Performance, Delayed render, slow response, lag spikes, ›" enabled="true" visible="false" accessible="true" x="20" y="1381" width="362" height="77" index="14" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-16" label="16, OCR Calibration, Fonts, sizes, weights, blur &amp; contrast, ›" enabled="true" visible="false" accessible="true" x="20" y="1469" width="362" height="77" index="15" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-17" label="17, Index Precision, Same text buttons, specific instance tap, ›" enabled="true" visible="false" accessible="true" x="20" y="1557" width="362" height="77" index="16" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-18" label="18, AOI Focus Test, Detect target only inside AOI bounds, ›" enabled="true" visible="false" accessible="true" x="20" y="1645" width="362" height="77" index="17" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-19" label="19, Combined Scroll, Vertical + horizontal gesture handling, ›" enabled="true" visible="false" accessible="true" x="20" y="1733" width="362" height="77" index="18" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-20" label="20, DRM Restricted UI, Masked/blocked interactions and overlays, ›" enabled="true" visible="false" accessible="true" x="20" y="1821" width="362" height="77" index="19" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-21" label="21, Input Variations, All input modes with validation checks, ›" enabled="true" visible="false" accessible="true" x="20" y="1909" width="362" height="77" index="20" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-22" label="22, Long Dropdown, Swipe through 100 options to select one, ›" enabled="true" visible="false" accessible="true" x="20" y="1997" width="362" height="77" index="21" traits=""/>
+                                          <XCUIElementTypeOther type="XCUIElementTypeOther" name="home-card-23" label="23, Press Element, Every Press Element edge case in one card, ›" enabled="true" visible="false" accessible="true" x="20" y="2085" width="362" height="77" index="22" traits=""/>
+                                        </XCUIElementTypeOther>
+                                      </XCUIElementTypeOther>
+                                      <XCUIElementTypeOther type="XCUIElementTypeOther" value="0%" name="Horizontal scroll bar, 1 page" label="Horizontal scroll bar, 1 page" enabled="true" visible="true" accessible="false" x="27" y="806" width="348" height="31" index="1" traits="Adjustable">
+                                        <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="65" y="833" width="272" height="4" index="0" traits=""/>
+                                      </XCUIElementTypeOther>
+                                      <XCUIElementTypeOther type="XCUIElementTypeOther" value="0%" name="Horizontal scroll bar, 1 page" label="Horizontal scroll bar, 1 page" enabled="true" visible="true" accessible="false" x="27" y="806" width="348" height="31" index="2" traits="Adjustable">
+                                        <XCUIElementTypeOther type="XCUIElementTypeOther" enabled="true" visible="true" accessible="false" x="65" y="833" width="272" height="4" index="0" traits=""/>
+                                      </XCUIElementTypeOther>
+                                    </XCUIElementTypeScrollView>
+                                  </XCUIElementTypeOther>
+                                </XCUIElementTypeOther>
+                              </XCUIElementTypeOther>
+                            </XCUIElementTypeOther>
+                          </XCUIElementTypeOther>
+                        </XCUIElementTypeOther>
+                      </XCUIElementTypeOther>
+                    </XCUIElementTypeOther>
+                  </XCUIElementTypeOther>
+                </XCUIElementTypeOther>
+              </XCUIElementTypeOther>
+            </XCUIElementTypeOther>
+          </XCUIElementTypeOther>
+        </XCUIElementTypeOther>
+      </XCUIElementTypeOther>
+    </XCUIElementTypeWindow>
+  </XCUIElementTypeApplication>
+</AppiumAUT>

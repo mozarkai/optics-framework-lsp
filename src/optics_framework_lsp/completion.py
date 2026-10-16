@@ -9,6 +9,7 @@ from collections.abc import Iterable, Sequence
 from typing import Literal
 
 from lsprotocol.types import (
+    Command,
     CompletionItem,
     CompletionItemKind,
     Hover,
@@ -28,6 +29,7 @@ from . import yaml_cursor
 from .keyword_catalog import Catalog, Keyword, slug
 from .parser.ast import AST
 from .parser import is_yaml
+from .screen import OnScreen
 from .parser.csv_parser import filled_params
 from .parser.yaml_parser import tokens as step_tokens
 from .positions import from_utf16, to_utf16
@@ -112,6 +114,22 @@ _HEADERS = {
 }
 
 
+def _cell_start(prefix: str) -> int:
+    """Where the field being typed begins, counting an opening quote that `csv` would drop."""
+    quoted = False
+    start = 0
+    for i, char in enumerate(prefix):
+        if char == '"':
+            quoted = not quoted
+        elif char == "," and not quoted:
+            start = i + 1
+    return start
+
+
+def _cell(text: str) -> str:
+    return '"' + text.replace('"', '""') + '"' if any(c in text for c in ',"\n') else text
+
+
 class Cursor:
     """Where a position falls in a csv: its header row, column, and partial field."""
 
@@ -137,6 +155,8 @@ class Cursor:
         self.partial = fields[-1]
         self.line = position.line
         self.start = at - len(self.partial)
+        self.at = at
+        self.cell_start = _cell_start(prefix)
 
     def column_of(self, header: str) -> int | None:
         return self.headers.index(header) if header in self.headers else None
@@ -149,6 +169,15 @@ class Cursor:
 
     def step_name(self, step: int) -> str:
         return slug(self.field(step))
+
+    def cell(self, text: str) -> TextEdit:
+        return TextEdit(
+            range=Range(
+                start=Position(line=self.line, character=to_utf16(self.source, self.cell_start)),
+                end=Position(line=self.line, character=to_utf16(self.source, self.at)),
+            ),
+            new_text=_cell(text),
+        )
 
     def replacement(self, text: str) -> TextEdit:
         """Replace the whole field, so ${b} completes without nesting into ${${b}}."""
@@ -190,6 +219,44 @@ def _item(cursor: AnyCursor, label: str, kind: CompletionItemKind, detail: str, 
         text_edit=cursor.replacement(text),
         filter_text=text,
     )
+
+
+def _on_screen(cursor: Cursor, screen: Sequence[OnScreen]) -> list[CompletionItem]:
+    return [
+        CompletionItem(
+            label=found.locator,
+            kind=CompletionItemKind.Field,
+            detail=found.detail,
+            text_edit=cursor.cell(found.locator),
+            filter_text=_cell(found.locator),
+        )
+        for found in screen
+    ]
+
+
+def _read_screen(cursor: Cursor, uri: str, hint: str | None) -> list[CompletionItem]:
+    """Accepting it runs the command, since a remote device is read only when asked."""
+    if not hint:
+        return []
+    return [
+        CompletionItem(
+            label=hint,
+            kind=CompletionItemKind.Event,
+            sort_text="~",
+            filter_text=cursor.partial,
+            text_edit=cursor.cell(cursor.partial),
+            command=Command(title=hint, command="optics.readScreen", arguments=[uri]),
+        )
+    ]
+
+
+def _rank_on_screen(items: list[CompletionItem], ast: AST, screen: Sequence[OnScreen]) -> None:
+    here = {found.locator for found in screen}
+    names = {e.name for e in ast.elements if any(l.text in here for l in e.locators)}
+    for item in items:
+        if item.kind == CompletionItemKind.Variable and item.label in names:
+            item.sort_text = "0" + item.label
+            item.detail = "element, on screen"
 
 
 def _modules(cursor: AnyCursor, ast: AST, prefix: str = "") -> list[CompletionItem]:
@@ -394,6 +461,8 @@ def complete(
     data_files: Sequence[str] = (),
     apis: Sequence[str] = (),
     snippets: bool = False,
+    screen: Sequence[OnScreen] = (),
+    screen_hint: str | None = None,
 ) -> list[CompletionItem]:
     if is_yaml(uri):
         return _complete_yaml(
@@ -434,6 +503,7 @@ def complete(
         # Accepting a param the header does not cover declares it in the same edit.
         for item in items:
             item.additional_text_edits = _widen_header(cursor, step)
+        _rank_on_screen(items, ast, screen)
         return items
 
     # Both name columns continue an existing block, so they offer what already exists.
@@ -445,11 +515,15 @@ def complete(
         kind = CompletionItemKind.Variable
         return _listing(cursor, sorted(undefined(ast, catalog)), kind, "used, not defined")
 
-    # An id is usually an xpath or literal text, which we cannot guess, but an image
-    # locator is the bare filename of a template somewhere in the project. Any
+    # An id is usually an xpath or literal text, which only a device screen can offer, or an image
+    # locator, the bare filename of a template somewhere in the project. Any
     # `element_id*` column holds one, as `read_elements` reads them all.
     if cursor.header_at(cursor.column).startswith("element_id"):
-        return _listing(cursor, images, CompletionItemKind.File, "template image")
+        return (
+            _listing(cursor, images, CompletionItemKind.File, "template image")
+            + _on_screen(cursor, screen)
+            + _read_screen(cursor, uri, screen_hint)
+        )
 
     if cursor.column == cursor.column_of("test_case"):
         return _test_cases(cursor, ast)

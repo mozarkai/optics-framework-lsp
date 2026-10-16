@@ -57,7 +57,8 @@ suite('device view', () => {
   test('screen suggestions are off until asked for, and the binary paths cannot come from a workspace', () => {
     const config = vscode.workspace.getConfiguration('optics');
     assert.strictEqual(config.get('screenElements.enabled'), false);
-    for (const key of ['screenElements.enabled', 'deviceView.adbPath']) {
+    assert.strictEqual(config.get('autoInstall'), true);
+    for (const key of ['screenElements.enabled', 'autoInstall', 'deviceView.adbPath']) {
       assert.ok(config.inspect(key), key);
     }
   });

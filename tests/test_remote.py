@@ -161,3 +161,20 @@ def test_the_device_views_read_returns_the_picture_or_why_not(monkeypatch):
 
     monkeypatch.setattr(remote.HELD, "screenshot", taken)
     assert run() == {"error": "in use"}
+
+
+def test_the_device_view_starts_on_the_device_the_suite_names(monkeypatch):
+    from optics_framework_lsp import server
+
+    monkeypatch.setitem(screen._appium, "android:R5", {**BLOCK, "url": "https://hub.example.com/wd/hub"})
+
+    class Client:
+        def folder_of(self, uri):
+            return "file:///w"
+
+    monkeypatch.setattr(server, "_device_hint", lambda uri, folder: "android:R5")
+    assert server.suite_device(Client(), "file:///w/e.csv") == "remote:android:R5"
+    monkeypatch.setattr(server, "_device_hint", lambda uri, folder: "android:LOCAL")
+    assert server.suite_device(Client(), "file:///w/e.csv") == "android:LOCAL"
+    monkeypatch.setattr(server, "_device_hint", lambda uri, folder: None)
+    assert server.suite_device(Client(), "file:///w/e.csv") is None

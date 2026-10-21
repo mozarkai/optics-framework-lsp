@@ -1,6 +1,6 @@
 ---
 name: optics-framework
-description: Read the optics-framework documentation before answering about its keywords, and use the optics MCP tools for the test suites in this project. Use when working with optics-framework CSV or YAML test suites (test_cases, modules, elements, error_definitions) or when a keyword name, parameter or default is uncertain.
+description: Read the optics-framework documentation before answering about its keywords, and use the optics-lsp MCP tools for the test suites in this project. Use when working with optics-framework CSV or YAML test suites (test_cases, modules, elements, error_definitions) or when a keyword name, parameter or default is uncertain.
 license: Apache-2.0
 ---
 
@@ -76,7 +76,9 @@ starts with a keyword's, like `Sleep Well`, is still read as the module.
 
 ## Answering questions about a suite
 
-The `optics` MCP server exposes this project's language server, which knows every module, element,
-error code and keyword signature in the project, in both formats. It reports each of the traps
-above. Prefer it over reading the files by hand, and prefer it over recalling the framework from
-memory.
+The `optics-lsp` MCP server exposes this project's language server, which knows every module,
+element, error code and keyword signature in the project, in both formats. It reports each of the
+traps above. Prefer it over reading the files by hand, and prefer it over recalling the framework
+from memory. Without that server, `optics-lsp lint . --json` reports the same problems from a
+shell. The framework's own `optics` MCP server drives a device or browser and does not read the
+suite.

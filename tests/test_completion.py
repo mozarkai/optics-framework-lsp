@@ -427,3 +427,9 @@ def test_images_are_offered_in_any_element_id_column():
         images=["btn.png"],
     )
     assert [i.label for i in items] == ["btn.png"]
+
+
+def test_a_stored_name_is_offered_and_its_own_cell_offers_nothing():
+    stored = MODULES + "Login,Get Text,${btn},store_as=total\n"
+    assert "total" in [i.label for i in _typing(stored, "Other,Press Element,", ELEMENTS)]
+    assert _typing(stored, "Other,Press Element,${btn},store_as=", ELEMENTS) == []

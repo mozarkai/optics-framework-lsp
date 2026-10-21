@@ -49,6 +49,10 @@ CATALOG: Catalog = {
 }
 
 
+# The engine drops this cell before binding the rest.
+STORE_AS = -1
+
+
 def slots(
     step_name: str | None, params: Sequence[str], catalog: Catalog | None = None
 ) -> list[tuple[int, str]]:
@@ -65,7 +69,9 @@ def slots(
     free = 0
     for param in params:
         key, sep, value = param.partition("=")
-        if sep and (key := key.strip()) in names:
+        if sep and key.strip() == "store_as":
+            bound.append((STORE_AS, value.strip()))
+        elif sep and (key := key.strip()) in names:
             bound.append((names.index(key), value.strip()))
         else:
             bound.append((free, param))

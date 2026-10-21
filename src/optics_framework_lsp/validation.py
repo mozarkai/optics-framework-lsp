@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from functools import partial
 from operator import attrgetter
 
-from .keyword_catalog import Catalog, Keyword, slots, slug
+from .keyword_catalog import STORE_AS, Catalog, Keyword, slots, slug
 from .parser.ast import AST, ErrorDefinition, IssueKind, kinds_of
 from .parser.yaml_parser import CLASSIFY, SECTIONS
 
@@ -234,7 +234,7 @@ def _incomplete_errors(ast: AST) -> Iterator[_Keyed]:
 def declares_at(step_name: str | None, count: int) -> set[int]:
     """Which params of a step bind a name rather than read one."""
     where = _DECLARES.get(slug(step_name))
-    return set(range(*where.indices(count))) if where else set()
+    return (set(range(*where.indices(count))) if where else set()) | {STORE_AS}
 
 
 def module_args(step_name: str | None, count: int) -> set[int]:
@@ -317,21 +317,16 @@ def declared(ast: AST, catalog: Catalog | None = None) -> set[str]:
 
 
 def substitutes_at(step_name: str | None, count: int) -> set[int]:
-    """Which params the keyword substitutes `${refs}` *inside*.
-
-    `resolve_param` looks a name up only when the whole cell is one `${name}`. These three
-    keywords re-scan their own param and raise `E0702` on a missing name, so an embedded ref
-    there is a real reference; anywhere else the keyword is handed the text verbatim.
-    """
+    """The runner substitutes inside every param but declared names; these three keywords do their own."""
     name = slug(step_name)
-    if name == "read data":
-        return {2}  # the query — `_resolve_query_vars`
     if name == "evaluate":
         return {1}  # the expression — `_compute_expression`
+    if name == "date evaluate":
+        return set()
     if name == "condition":
         # Whatever is not a target is a condition, and `_resolve_condition` substitutes it.
         return set(range(count)) - module_args(step_name, count)
-    return set()
+    return set(range(count)) - declares_at(step_name, count)
 
 
 def element_refs(ast: AST, catalog: Catalog | None = None) -> Iterator[tuple[str, int, str]]:
@@ -389,6 +384,8 @@ def _split_params(
     for token in tokens:
         key, sep, _ = token.partition("=")
         key = key.strip()
+        if sep and key == "store_as":
+            continue
         if sep and key in keyword.params:
             if key in named:
                 repeated.append(key)

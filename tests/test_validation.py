@@ -365,3 +365,23 @@ def test_store_as_binds_a_name_and_is_not_a_keyword_param():
         CATALOG,
     )
     assert [(d.code, d.line) for d in found[MODULES]] == [("element-not-found", 5)]
+
+
+def test_a_doubled_dollar_is_a_literal_not_a_reference():
+    found = validate(parse_csv_sources([(MODULES, "module_name,module_step,param_1\nM,Press Element,//*[@text='$${literal}']\n")]), CATALOG)
+    assert found.get(MODULES, []) == []
+
+
+def test_date_evaluate_reads_names_inside_its_expression_and_read_data_only_in_its_query():
+    """optics substitutes Date Evaluate's params; Read Data substitutes only its own query."""
+    found = validate(
+        parse_csv_sources([(
+            MODULES,
+            "module_name,module_step,param_1,param_2,param_3\n"
+            "M,Date Evaluate,${due},2025-04-25,+${typo} days\n"
+            "M,Read Data,${row},${dir}/people.csv,name == ${missing}\n",
+        )]),
+        CATALOG,
+    )
+    assert [(d.code, d.line) for d in found[MODULES]] == [("element-not-found", 1), ("element-not-found", 2)]
+    assert [d.message for d in found[MODULES]] == ["'typo' is not a defined element or variable", "'missing' is not a defined element or variable"]

@@ -148,6 +148,8 @@ def _signature(fn) -> dict:
         "params": names,
         "defaults": {names[pad + i]: ast.unparse(d) for i, d in enumerate(args.defaults)},
         "doc": ast.get_docstring(fn) or "",
+        # Unannotated keywords might still return.
+        "returns": fn.returns is None or ast.unparse(fn.returns) != "None",
     }
 
 
@@ -179,7 +181,7 @@ def render(keywords: dict[str, dict], version: str) -> str:
     for name in sorted(keywords):
         signature = keywords[name]
         lines.append(f"    {name!r}: {{\n")
-        for key in ("required", "variadic", "params", "defaults"):
+        for key in ("required", "variadic", "params", "defaults", "returns"):
             lines.append(f"        {key!r}: {signature[key]!r},\n")
         lines.append(f"        'doc': {signature['doc']!r},\n")
         lines.append("    },\n")

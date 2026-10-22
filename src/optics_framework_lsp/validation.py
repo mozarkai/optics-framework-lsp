@@ -41,6 +41,8 @@ class Finding:
 
 
 VAR = re.compile(r"\$\{([^}]+)\}")
+# $${name} is optics' escape for a literal ${name}, not a reference.
+EMBEDDED_VAR = re.compile(r"(?<!\$)\$\{([^}]+)\}")
 
 # Keywords that bind a name instead of reading one, and which params hold the names.
 # Taken from the optics-framework source: most store under the name in their first
@@ -317,12 +319,12 @@ def declared(ast: AST, catalog: Catalog | None = None) -> set[str]:
 
 
 def substitutes_at(step_name: str | None, count: int) -> set[int]:
-    """The runner substitutes inside every param but declared names; these three keywords do their own."""
+    """The runner substitutes inside every param but declared names; these keywords do their own."""
     name = slug(step_name)
     if name == "evaluate":
         return {1}  # the expression — `_compute_expression`
-    if name == "date evaluate":
-        return set()
+    if name == "read data":
+        return {2}  # the query — `_resolve_query_vars`
     if name == "condition":
         # Whatever is not a target is a condition, and `_resolve_condition` substitutes it.
         return set(range(count)) - module_args(step_name, count)
@@ -348,7 +350,7 @@ def element_refs(ast: AST, catalog: Catalog | None = None) -> Iterator[tuple[str
                 if whole := VAR.fullmatch(cell):
                     yield module.uri, step.row, whole.group(1)
                 elif at in embeds:
-                    for name in VAR.findall(cell):
+                    for name in EMBEDDED_VAR.findall(cell):
                         yield module.uri, step.row, name
 
 

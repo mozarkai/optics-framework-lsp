@@ -385,3 +385,38 @@ def test_date_evaluate_reads_names_inside_its_expression_and_read_data_only_in_i
     )
     assert [(d.code, d.line) for d in found[MODULES]] == [("element-not-found", 1), ("element-not-found", 2)]
     assert [d.message for d in found[MODULES]] == ["'typo' is not a defined element or variable", "'missing' is not a defined element or variable"]
+
+
+def _scoped(test_cases: str, modules: str):
+    found = validate(
+        parse_csv_sources([
+            (TESTS, "test_case,test_step\n" + test_cases),
+            (MODULES, "module_name,module_step,param_1,param_2\n" + modules),
+            (ELEMENTS, "element_name,element_id\nbtn,//a\n"),
+        ]),
+        CATALOG,
+    )
+    return [(d.code, d.line) for d in found.get(MODULES, [])]
+
+
+def test_a_stored_name_is_out_of_scope_in_a_test_case_that_never_stores_it():
+    """The engine resets store_as values at each test case."""
+    assert _scoped("TC1,Store\nTC1,Use\nTC2,Use\n",
+                   "Store,Get Text,${btn},store_as=bal\nUse,Enter Text,${btn},${bal}\n") == [("variable-out-of-scope", 2)]
+
+
+def test_a_name_stored_in_setup_or_bound_by_evaluate_reaches_every_test_case():
+    assert _scoped("Suite Setup,Store\nTC1,Use\nTC2,Use\n",
+                   "Store,Get Text,${btn},store_as=bal\nUse,Enter Text,${btn},${bal}\n") == []
+    assert _scoped("TC1,Count\nTC2,Use\nTC3,Store\n",
+                   "Count,Evaluate,${bal},1 + 1\nUse,Enter Text,${btn},${bal}\nStore,Get Text,${btn},store_as=bal\n") == []
+
+
+def test_a_store_through_a_nested_module_counts_for_its_test_case():
+    assert _scoped("TC1,Outer\nTC1,Use\n",
+                   "Outer,Execute Module,Store\nStore,Get Text,${btn},store_as=bal\nUse,Enter Text,${btn},${bal}\n") == []
+
+
+def test_store_as_needs_a_name_and_a_keyword_that_returns_something():
+    assert _scoped("", "M,Get Text,${btn},store_as=\nM,Press Element,${btn},store_as=done\n") == [
+        ("store-as-empty", 1), ("store-as-no-value", 2)]

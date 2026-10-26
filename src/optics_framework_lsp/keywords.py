@@ -1,10 +1,10 @@
 # GENERATED — do not edit. Run `python scripts/update_catalog.py` to refresh.
 #
-# Keyword signatures read from optics-framework 1.11.0. `required` counts the leading
+# Keyword signatures read from optics-framework 1.11.1. `required` counts the leading
 # positional params with no default; `variadic` means the keyword takes `*args`, so any
 # number of params is legal.
 
-OPTICS_VERSION = '1.11.0'
+OPTICS_VERSION = '1.11.1'
 
 KEYWORDS: dict[str, dict] = {
     'assert equality': {

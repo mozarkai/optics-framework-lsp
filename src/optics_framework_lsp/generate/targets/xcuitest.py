@@ -222,6 +222,7 @@ EMIT: dict[str, tuple[int, object]] = {
 
 UNSUPPORTED: dict[str, str] = {
     # no ios form at all
+    "go back": "ios has no system back button; an app goes back through its own navigation button",
     "press keycode": "android keycodes have no ios concept; XCUIDevice presses only .home and the volume buttons",
     "get app version": "a ui test runs in its own process and cannot read the app's bundle; resolve it in ci instead",
     # compiled, on the device — these are harder here than on android

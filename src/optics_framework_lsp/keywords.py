@@ -1,10 +1,10 @@
 # GENERATED — do not edit. Run `python scripts/update_catalog.py` to refresh.
 #
-# Keyword signatures read from optics-framework 1.10.2. `required` counts the leading
+# Keyword signatures read from optics-framework 1.11.0. `required` counts the leading
 # positional params with no default; `variadic` means the keyword takes `*args`, so any
 # number of params is legal.
 
-OPTICS_VERSION = '1.10.2'
+OPTICS_VERSION = '1.11.0'
 
 KEYWORDS: dict[str, dict] = {
     'assert equality': {
@@ -21,7 +21,7 @@ KEYWORDS: dict[str, dict] = {
         'params': ['elements', 'timeout_str', 'rule', 'event_name', 'fail'],
         'defaults': {'timeout_str': "'30'", 'rule': "'any'", 'event_name': 'None', 'fail': 'True'},
         'returns': True,
-        'doc': 'Asserts the presence of elements -- anywhere in the page/DOM, visible or not.\n\n:param elements: Comma-separated string of elements to check (Image templates, OCR templates, or XPaths).\n:param timeout_str: The time to wait for the elements in seconds.\n:param rule: The rule for verification ("any" or "all").\n:param event_name: The name of the event associated with the assertion, if any.\n:param fail: If True, raise on failure; if False, return False instead.\n:return: True if the rule is satisfied, False otherwise.',
+        'doc': 'Asserts the presence of elements -- anywhere in the page/DOM, visible or not.\n\n:param elements: Comma-separated string of elements to check (Image templates, OCR templates, or XPaths).\n:param timeout_str: The time to wait for the elements in seconds.\n:param rule: The rule for verification ("any" or "all").\n:param event_name: The name of the event associated with the assertion, if any.\n:param fail: If True, raise on failure; if False, return False instead. A suite writes\n    this as text, and ``False`` is read case-insensitively.\n:return: True if the rule is satisfied, False otherwise.',
     },
     'assert visibility': {
         'required': 1,
@@ -29,7 +29,7 @@ KEYWORDS: dict[str, dict] = {
         'params': ['elements', 'timeout_str', 'rule', 'event_name', 'fail'],
         'defaults': {'timeout_str': "'30'", 'rule': "'any'", 'event_name': 'None', 'fail': 'True'},
         'returns': True,
-        'doc': 'Asserts that elements are actually rendered/visible on screen right now -- distinct\nfrom :meth:`assert_presence`, which reports found even for elements that exist in\nthe page/DOM but are off-screen (e.g. not yet scrolled into view).\n\n:param elements: Comma-separated string of elements to check (Image templates, OCR templates, or XPaths).\n:param timeout_str: The time to wait for the elements to become visible, in seconds.\n:param rule: The rule for verification ("any" or "all").\n:param event_name: The name of the event associated with the assertion, if any.\n:param fail: If True, raise on failure; if False, return False instead.\n:return: True if the rule is satisfied, False otherwise.',
+        'doc': 'Asserts that elements are actually rendered/visible on screen right now -- distinct\nfrom :meth:`assert_presence`, which reports found even for elements that exist in\nthe page/DOM but are off-screen (e.g. not yet scrolled into view).\n\n:param elements: Comma-separated string of elements to check (Image templates, OCR templates, or XPaths).\n:param timeout_str: The time to wait for the elements to become visible, in seconds.\n:param rule: The rule for verification ("any" or "all").\n:param event_name: The name of the event associated with the assertion, if any.\n:param fail: If True, raise on failure; if False, return False instead. A suite writes\n    this as text, and ``False`` is read case-insensitively.\n:return: True if the rule is satisfied, False otherwise.',
     },
     'capture pagesource': {
         'required': 0,
@@ -85,7 +85,7 @@ KEYWORDS: dict[str, dict] = {
         'params': ['element', 'timeout', 'event_name'],
         'defaults': {'timeout': "'30'", 'event_name': 'None'},
         'returns': False,
-        'doc': 'Detect and press a specified element.\n\n:param element: The element to be detected and pressed (Image template, OCR template, or XPath).\n:param timeout: Timeout for the detection operation.\n:param event_name: The event triggering the press.',
+        'doc': 'Press an element if it appears within ``timeout``; otherwise do nothing.\n\nWhen the element never appears the press is skipped and the keyword still succeeds\n(it does not raise), so use it for optional taps such as dismissing a popup that may\nnot show. Use ``press_element`` when the target must be present.\n\n:param element: The element to be detected and pressed (Image template, OCR template, or XPath).\n:param timeout: Seconds to wait for the element to appear.\n:param event_name: The event triggering the press.',
     },
     'enter number': {
         'required': 2,
@@ -170,10 +170,10 @@ KEYWORDS: dict[str, dict] = {
     'get interactive elements': {
         'required': 0,
         'variadic': False,
-        'params': ['filter_config'],
-        'defaults': {'filter_config': 'None'},
+        'params': ['filter_config', 'compact'],
+        'defaults': {'filter_config': 'None', 'compact': 'False'},
         'returns': True,
-        'doc': 'Retrieves a list of interactive elements on the current screen.\n\nXPath and text fields are converted to one-line, CSV-friendly form (newlines\nas \\n, tabs as \\t, etc.) so output can be pasted into elements.csv or similar.\nOn Appium sources, element bounds are returned in the screenshot\'s pixel space.\n\n:param filter_config: Optional list of filter types (e.g., ["buttons", "inputs"]).\n:return: A list of interactive elements.',
+        'doc': 'Retrieves a list of interactive elements on the current screen.\n\nXPath and text fields are converted to one-line, CSV-friendly form (newlines\nas \\n, tabs as \\t, etc.) so output can be pasted into elements.csv or similar.\nOn Appium sources, element bounds are returned in the screenshot\'s pixel space.\n\n:param filter_config: Optional list of filter types (e.g., ["buttons", "inputs"]).\n:param compact: When True, return only actionable elements (labels folded in,\n    with an ``act`` list) plus standalone visible text (``act: []``), as\n    ``{i, label, cls, bounds:[x1,y1,x2,y2], act, rid?, loc?}`` (``loc``: a unique web\n    locator). Implemented by the Appium and Playwright page sources; sources without it return their full list.\n:return: A list of interactive elements.',
     },
     'get screen elements': {
         'required': 0,
@@ -191,6 +191,14 @@ KEYWORDS: dict[str, dict] = {
         'returns': True,
         'doc': 'Get the text from a specified element.\n\n:param element: The target element (Image template, OCR template, or XPath).\n:param index: Index of the element if multiple matches are found.\n:param aoi_x: X percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_y: Y percentage of Area of Interest top-left corner (0-100). Default: 0.\n:param aoi_width: Width percentage of Area of Interest (0-100). Default: 100.\n:param aoi_height: Height percentage of Area of Interest (0-100). Default: 100.\n:return: The text from the element or None if not supported.',
     },
+    'go back': {
+        'required': 0,
+        'variadic': False,
+        'params': ['event_name'],
+        'defaults': {'event_name': 'None'},
+        'returns': False,
+        'doc': 'Go back one screen: browser history on the web, the back button on a phone.',
+    },
     'initialise setup': {
         'required': 0,
         'variadic': False,
@@ -204,8 +212,8 @@ KEYWORDS: dict[str, dict] = {
         'variadic': False,
         'params': ['api_identifier'],
         'defaults': {},
-        'returns': False,
-        'doc': "Invokes an API call based on a definition from the session's API data.\n\n:param api_identifier: API to call, in ``collection.api_name`` form.",
+        'returns': True,
+        'doc': "Invokes an API call based on a definition from the session's API data.\n\n:param api_identifier: API to call, in ``collection.api_name`` form.\n:return: ``status_code``, ``headers``, ``body`` and ``elapsed_ms`` of the response.",
     },
     'is element': {
         'required': 3,
@@ -277,7 +285,7 @@ KEYWORDS: dict[str, dict] = {
         'params': ['keycode', 'event_name'],
         'defaults': {'event_name': 'None'},
         'returns': False,
-        'doc': 'Press a specified keycode.\n\n:param keycode: The keycode to be pressed.\n:param event_name: The event triggering the press.',
+        'doc': 'Press a device key by keycode, for system/hardware keys with no on-screen element.\n\nOn Android the keycode is the numeric KeyEvent code (3 = HOME, 4 = BACK, 66 = ENTER,\n187 = RECENTS); TV platform profiles map it to their remote-control key instead.\n\n:param keycode: The keycode to be pressed.\n:param event_name: The event triggering the press.',
     },
     'press radio button': {
         'required': 1,
@@ -317,7 +325,7 @@ KEYWORDS: dict[str, dict] = {
         'params': ['direction', 'event_name'],
         'defaults': {'event_name': 'None'},
         'returns': False,
-        'doc': 'Perform a scroll action in a specified direction.\n\n:param direction: The scroll direction (up, down, left, right).\n:param event_name: The event triggering the scroll.',
+        'doc': 'Scroll the current view one step in a direction.\n\n``direction`` names the way you move through the content: "down" reveals content\nfurther down. Every driver supports up/down; left/right work only on Selenium\n(Appium logs and ignores them, Playwright treats anything but "down" as up). The\nkeyword succeeds whether or not the view actually moved.\n\n:param direction: up or down (left/right on Selenium only).\n:param event_name: The event triggering the scroll.',
     },
     'scroll from element': {
         'required': 3,
@@ -365,7 +373,7 @@ KEYWORDS: dict[str, dict] = {
         'params': ['coor_x', 'coor_y', 'direction', 'swipe_length', 'event_name'],
         'defaults': {'direction': "'right'", 'swipe_length': "'50'", 'event_name': 'None'},
         'returns': False,
-        'doc': 'Perform a swipe action in a specified direction.\n\n:param coor_x: X coordinate of the swipe.\n:param coor_y: Y coordinate of the swipe.\n:param direction: The swipe direction (up, down, left, right).\n:param swipe_length: The length of the swipe.\n:param event_name: The event triggering the swipe.',
+        'doc': 'Swipe from a point in a specified direction.\n\n``direction`` is the way the finger moves: "up" drags bottom to top, which reveals\ncontent further down. The keyword succeeds whether or not anything moved.\n\n:param coor_x: X pixel coordinate where the swipe starts.\n:param coor_y: Y pixel coordinate where the swipe starts.\n:param direction: The finger direction (up, down, left, right).\n:param swipe_length: Swipe distance in pixels.\n:param event_name: The event triggering the swipe.',
     },
     'swipe by percentage': {
         'required': 2,
@@ -373,7 +381,7 @@ KEYWORDS: dict[str, dict] = {
         'params': ['percent_x', 'percent_y', 'direction', 'swipe_length', 'event_name'],
         'defaults': {'direction': "'right'", 'swipe_length': "'50'", 'event_name': 'None'},
         'returns': False,
-        'doc': 'Perform a swipe action in a specified direction by percentage.\n\n:param percent_x: X percentage of the swipe.\n:param percent_y: Y percentage of the swipe.\n:param direction: The swipe direction (up, down, left, right).\n:param swipe_length: The length of the swipe.\n:param event_name: The event triggering the swipe.',
+        'doc': 'Swipe from a screen position, given in percentages, in a specified direction.\n\n``direction`` is the way the finger moves: "up" drags bottom to top, which reveals\ncontent further down. The keyword succeeds whether or not anything moved.\n\n:param percent_x: Start X as a percentage of screen width (0-100).\n:param percent_y: Start Y as a percentage of screen height (0-100).\n:param direction: The finger direction (up, down, left, right).\n:param swipe_length: Swipe distance as a percentage of screen height (up/down) or width (left/right).\n:param event_name: The event triggering the swipe.',
     },
     'swipe from element': {
         'required': 3,

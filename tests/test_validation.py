@@ -303,16 +303,13 @@ def test_only_a_short_row_is_upgraded_by_the_file_kind():
     ]
 
 
-def test_an_embedded_ref_counts_only_where_the_keyword_substitutes_it():
-    """`resolve_param` resolves a param only when the whole cell is one `${name}`. Three
-    keywords re-scan their own param and raise E0702 on a missing name; elsewhere the
-    keyword is handed the text verbatim, braces and all."""
+def test_an_embedded_ref_is_a_reference_wherever_the_runner_substitutes_it():
+    """The runner substitutes ${name} inside any param and fails on an unknown name."""
     found = _check(**{
         MODULES:
             "module_name,module_step,param_1,param_2,param_3\n"
             # Whole-cell: always a reference, whatever the keyword.
             "M,Press Element,${whole}\n"
-            # Embedded in a plain param: literal text the keyword receives as-is.
             "M,Enter Text,${known},hello ${embedded_plain}\n"
             # Read Data's query, Evaluate's expression, Condition's condition: substituted.
             "M,Read Data,out,f.csv,age == ${embedded_query}\n"
@@ -321,8 +318,7 @@ def test_an_embedded_ref_counts_only_where_the_keyword_substitutes_it():
         ELEMENTS: "element_name,element_id\nknown,//a\nTarget,//b\n",
     })
     missing = {d.message.split("'")[1] for d in found[MODULES] if d.code == "element-not-found"}
-    assert missing == {"whole", "embedded_query", "embedded_expr", "embedded_cond"}
-    assert "embedded_plain" not in missing
+    assert missing == {"whole", "embedded_plain", "embedded_query", "embedded_expr", "embedded_cond"}
 
 
 def test_a_ref_in_the_step_name_cell_is_a_missing_keyword_not_a_missing_element():
@@ -351,3 +347,64 @@ def test_element_refs_yields_only_the_cells_the_runner_resolves():
         "module_name,module_step,param_1,param_2\n"
         "M,Condition,${cond} > 1,Do ${notaref}\n"
     ) == ["cond"]
+
+
+def test_store_as_binds_a_name_and_is_not_a_keyword_param():
+    """The runner drops the store_as cell before binding params."""
+    found = validate(
+        parse_csv_sources([
+            (MODULES,
+             "module_name,module_step,param_1,param_2\n"
+             "M,Get Text,${btn},store_as=bal\n"
+             "M,Get Text,store_as=${total},${btn}\n"
+             "M,Enter Text,${btn},${bal}\n"
+             "M,Press Element,(//row)[${total}]\n"
+             "M,Press Element,(//row)[${typo}]\n"),
+            (ELEMENTS, "element_name,element_id\nbtn,//a\n"),
+        ]),
+        CATALOG,
+    )
+    assert [(d.code, d.line) for d in found[MODULES]] == [("element-not-found", 5)]
+
+
+def test_a_doubled_dollar_is_a_literal_not_a_reference():
+    found = validate(parse_csv_sources([(MODULES, "module_name,module_step,param_1\nM,Press Element,//*[@text='$${literal}']\n")]), CATALOG)
+    assert found.get(MODULES, []) == []
+
+
+def test_date_evaluate_reads_names_inside_its_expression_and_read_data_only_in_its_query():
+    """optics substitutes Date Evaluate's params; Read Data substitutes only its own query."""
+    found = validate(
+        parse_csv_sources([(
+            MODULES,
+            "module_name,module_step,param_1,param_2,param_3\n"
+            "M,Date Evaluate,${due},2025-04-25,+${typo} days\n"
+            "M,Read Data,${row},${dir}/people.csv,name == ${missing}\n",
+        )]),
+        CATALOG,
+    )
+    assert [(d.code, d.line) for d in found[MODULES]] == [("element-not-found", 1), ("element-not-found", 2)]
+    assert [d.message for d in found[MODULES]] == ["'typo' is not a defined element or variable", "'missing' is not a defined element or variable"]
+
+
+def _scoped(test_cases: str, modules: str):
+    found = validate(
+        parse_csv_sources([
+            (TESTS, "test_case,test_step\n" + test_cases),
+            (MODULES, "module_name,module_step,param_1,param_2\n" + modules),
+            (ELEMENTS, "element_name,element_id\nbtn,//a\n"),
+        ]),
+        CATALOG,
+    )
+    return [(d.code, d.line) for d in found.get(MODULES, [])]
+
+
+def test_a_stored_name_reaches_every_test_case():
+    """The engine keeps store_as values for the whole run."""
+    assert _scoped("TC1,Store\nTC2,Use\n",
+                   "Store,Get Text,${btn},store_as=bal\nUse,Enter Text,${btn},${bal}\n") == []
+
+
+def test_store_as_needs_a_name_and_a_keyword_that_returns_something():
+    assert _scoped("", "M,Get Text,${btn},store_as=\nM,Press Element,${btn},store_as=done\n") == [
+        ("store-as-empty", 1), ("store-as-no-value", 2)]

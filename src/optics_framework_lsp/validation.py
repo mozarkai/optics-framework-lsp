@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from functools import partial
 from operator import attrgetter
 
-from .keyword_catalog import Catalog, Keyword, slots, slug
-from .parser.ast import AST, ErrorDefinition, IssueKind, kinds_of
+from .keyword_catalog import STORE_AS, Catalog, Keyword, slots, slug, stored_name
+from .parser.ast import AST, Block, ErrorDefinition, IssueKind, Step, kinds_of
 from .parser.yaml_parser import CLASSIFY, SECTIONS
 
 SOURCE = "optics"
@@ -41,6 +41,8 @@ class Finding:
 
 
 VAR = re.compile(r"\$\{([^}]+)\}")
+# $${name} is optics' escape for a literal ${name}, not a reference.
+EMBEDDED_VAR = re.compile(r"(?<!\$)\$\{([^}]+)\}")
 
 # Keywords that bind a name instead of reading one, and which params hold the names.
 # Taken from the optics-framework source: most store under the name in their first
@@ -234,7 +236,7 @@ def _incomplete_errors(ast: AST) -> Iterator[_Keyed]:
 def declares_at(step_name: str | None, count: int) -> set[int]:
     """Which params of a step bind a name rather than read one."""
     where = _DECLARES.get(slug(step_name))
-    return set(range(*where.indices(count))) if where else set()
+    return (set(range(*where.indices(count))) if where else set()) | {STORE_AS}
 
 
 def module_args(step_name: str | None, count: int) -> set[int]:
@@ -301,14 +303,19 @@ def _unknown_modules(ast: AST, catalog: Catalog | None) -> Iterator[_Keyed]:
             )
 
 
-def declarations(ast: AST, catalog: Catalog | None = None) -> Iterator[tuple[str, int, str]]:
-    """Every place a name is bound at run time, as uri, row, name."""
+def _bindings(ast: AST, catalog: Catalog | None) -> Iterator[tuple[Block, Step, int, str]]:
     for module in ast.modules:
         for step in module.steps:
             binds = declares_at(step.step_name, len(step.params))
             for at, value in slots(step.step_name, step.params, catalog):
                 if at in binds and value:
-                    yield module.uri, step.row, _bare(value)
+                    yield module, step, at, _bare(value)
+
+
+def declarations(ast: AST, catalog: Catalog | None = None) -> Iterator[tuple[str, int, str]]:
+    """Every place a name is bound at run time, as uri, row, name."""
+    for module, step, _, name in _bindings(ast, catalog):
+        yield module.uri, step.row, name
 
 
 def declared(ast: AST, catalog: Catalog | None = None) -> set[str]:
@@ -317,21 +324,16 @@ def declared(ast: AST, catalog: Catalog | None = None) -> set[str]:
 
 
 def substitutes_at(step_name: str | None, count: int) -> set[int]:
-    """Which params the keyword substitutes `${refs}` *inside*.
-
-    `resolve_param` looks a name up only when the whole cell is one `${name}`. These three
-    keywords re-scan their own param and raise `E0702` on a missing name, so an embedded ref
-    there is a real reference; anywhere else the keyword is handed the text verbatim.
-    """
+    """The runner substitutes inside every param but declared names; these keywords do their own."""
     name = slug(step_name)
-    if name == "read data":
-        return {2}  # the query — `_resolve_query_vars`
     if name == "evaluate":
         return {1}  # the expression — `_compute_expression`
+    if name == "read data":
+        return {2}  # the query — `_resolve_query_vars`
     if name == "condition":
         # Whatever is not a target is a condition, and `_resolve_condition` substitutes it.
         return set(range(count)) - module_args(step_name, count)
-    return set()
+    return set(range(count)) - declares_at(step_name, count)
 
 
 def element_refs(ast: AST, catalog: Catalog | None = None) -> Iterator[tuple[str, int, str]]:
@@ -341,20 +343,25 @@ def element_refs(ast: AST, catalog: Catalog | None = None) -> Iterator[tuple[str
     a missing keyword rather than a missing element.
     """
     for module in ast.modules:
-        for step in module.steps:
-            count = len(step.params)
-            binds = declares_at(step.step_name, count)
-            embeds = substitutes_at(step.step_name, count)
+        for row, name in _refs_in(module, catalog):
+            yield module.uri, row, name
 
-            for at, cell in slots(step.step_name, step.params, catalog):
-                # A declaring keyword names its target, it does not reference it.
-                if at in binds:
-                    continue
-                if whole := VAR.fullmatch(cell):
-                    yield module.uri, step.row, whole.group(1)
-                elif at in embeds:
-                    for name in VAR.findall(cell):
-                        yield module.uri, step.row, name
+
+def _refs_in(module: Block, catalog: Catalog | None) -> Iterator[tuple[int, str]]:
+    for step in module.steps:
+        count = len(step.params)
+        binds = declares_at(step.step_name, count)
+        embeds = substitutes_at(step.step_name, count)
+
+        for at, cell in slots(step.step_name, step.params, catalog):
+            # A declaring keyword names its target, it does not reference it.
+            if at in binds:
+                continue
+            if whole := VAR.fullmatch(cell):
+                yield step.row, whole.group(1)
+            elif at in embeds:
+                for name in EMBEDDED_VAR.findall(cell):
+                    yield step.row, name
 
 
 def undefined(ast: AST, catalog: Catalog | None = None) -> set[str]:
@@ -387,6 +394,8 @@ def _split_params(
     named: set[str] = set()
     repeated: list[str] = []
     for token in tokens:
+        if stored_name(token) is not None:
+            continue
         key, sep, _ = token.partition("=")
         key = key.strip()
         if sep and key in keyword.params:
@@ -455,6 +464,15 @@ def _unknown_steps(ast: AST, catalog: Catalog) -> Iterator[_Keyed]:
                 yield _diag(
                     module.uri, step.row, ERROR, "keyword-arity", f"{step.step_name!r} {detail}"
                 )
+
+            for param in step.params:
+                name = stored_name(param)
+                if name == "":
+                    yield _diag(module.uri, step.row, ERROR, "store-as-empty",
+                                "store_as needs a name, e.g. store_as=balance")
+                elif name and not keyword.returns:
+                    yield _diag(module.uri, step.row, ERROR, "store-as-no-value",
+                                f"{step.step_name!r} returns no value, so store_as has nothing to keep")
 
 
 def validate(ast: AST, catalog: Catalog | None = None) -> dict[str, list[Finding]]:

@@ -24,6 +24,7 @@ class Keyword:
     doc: str = ""
     # What an omitted param falls back to, already repr'd, by param name.
     defaults: dict[str, str] = field(default_factory=dict)
+    returns: bool = True
 
 
 Catalog = dict[str, Keyword]
@@ -44,9 +45,20 @@ CATALOG: Catalog = {
         params=list(signature["params"]),
         doc=signature["doc"],
         defaults=dict(signature["defaults"]),
+        returns=signature["returns"],
     )
     for name, signature in KEYWORDS.items()
 }
+
+
+# -1 already means "no param" in completion.
+STORE_AS = -2
+
+
+def stored_name(param: str) -> str | None:
+    """The engine drops a store_as cell before binding the rest."""
+    key, sep, value = param.partition("=")
+    return value.strip() if sep and key.strip() == "store_as" else None
 
 
 def slots(
@@ -64,6 +76,9 @@ def slots(
     bound: list[tuple[int, str]] = []
     free = 0
     for param in params:
+        if (name := stored_name(param)) is not None:
+            bound.append((STORE_AS, name))
+            continue
         key, sep, value = param.partition("=")
         if sep and (key := key.strip()) in names:
             bound.append((names.index(key), value.strip()))

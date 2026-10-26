@@ -488,3 +488,9 @@ def test_a_remote_device_that_has_not_been_read_offers_an_item_that_reads_it():
     assert item.command.arguments == ["file:///w/0.csv"]
     assert item.sort_text == "~"
     assert item.text_edit.new_text == ""
+
+
+def test_a_stored_name_is_offered_and_its_own_cell_offers_nothing():
+    stored = MODULES + "Login,Get Text,${btn},store_as=total\n"
+    assert "total" in [i.label for i in _typing(stored, "Other,Press Element,", ELEMENTS)]
+    assert _typing(stored, "Other,Press Element,${btn},store_as=", ELEMENTS) == []

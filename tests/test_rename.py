@@ -51,10 +51,10 @@ def _rename(text: str, line: int, needle: str, new: str = "NEW"):
     )
 
 
-def _applied(text: str, uri: str, line: int, needle: str, new: str = "NEW") -> str:
+def _applied(text: str, uri: str, line: int, needle: str, new: str = "NEW", sources=SOURCES) -> str:
     """The file after the edits, so a test reads like the result rather than offsets."""
-    edits = rename(SOURCES, CATALOG, text, _at(text, line, needle), new) or {}
-    target = dict(SOURCES)[uri]
+    edits = rename(sources, CATALOG, text, _at(text, line, needle), new) or {}
+    target = dict(sources)[uri]
     lines = target.splitlines()
     for e in sorted(edits.get(uri, []), key=lambda e: -e.range.start.character):
         number = e.range.start.line
@@ -180,3 +180,13 @@ def test_a_ref_in_a_non_param_column_is_left_alone():
         [(M, modules), (E, ELEMENTS)], CATALOG, ELEMENTS, _at(ELEMENTS, 2, "btn"), "NEW"
     )
     assert len(edits[M]) == 1
+
+
+def test_a_stored_name_moves_with_its_store_as_cell():
+    text = (
+        "module_name,module_step,param_1,param_2\n"
+        "Grab,Get Text,#price,store_as=total\n"
+        "Grab,Press Element,(//row)[${total}],\n"
+    )
+    after = _applied(text, M, 3, "${total", "sum", sources=[(M, text)]).splitlines()
+    assert after[1:] == ["Grab,Get Text,#price,store_as=sum", "Grab,Press Element,(//row)[${sum}],"]

@@ -15,7 +15,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 def test_the_shipped_table_is_the_real_signatures():
     """No install needed — this is the point of hardcoding."""
-    assert len(CATALOG) == 51
+    assert len(CATALOG) == 52
     assert OPTICS_VERSION
 
     press = CATALOG["press element"]

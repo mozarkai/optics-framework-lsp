@@ -104,6 +104,7 @@ EMIT: dict[str, tuple[int, object]] = {
     "press by percentage": (3, lambda p: [_times(p, 2, f"d.click(float({p[0]}) / 100, float({p[1]}) / 100)")]),
     "press checkbox": (1, _one("_find(d, {0}).click()")),
     "press radio button": (1, _one("_find(d, {0}).click()")),
+    "go back": (0, _one('d.press("back")')),
     "press keycode": (1, _one("d.press(int({0}))")),
     # text
     "enter text": (2, _one("_find(d, {0}).set_text({1})")),
